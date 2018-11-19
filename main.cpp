@@ -1,8 +1,12 @@
+#include <utility>
 #include <iostream>
+#include <signal.h>
 #include <Poco/ErrorHandler.h>
 #include <Poco/String.h>
 #include <Poco/File.h>
 #include <Poco/FileStream.h>
+#include <Poco/Condition.h>
+#include <Poco/Mutex.h>
 #include <Poco/Net/HTTPServer.h>
 #include "src/version.h"
 #include "src/FormatUtils.h"
@@ -17,28 +21,137 @@
 using namespace Poco::Net;
 
 
-class ErrorHandler : public Poco::ErrorHandler {
-public:
-  void exception(const Poco::Exception& exc)
-  {
-    Logger::getLogger().error("A thread was terminated by an unhandled exception: %s", exc.displayText());
+namespace {
+  /**
+   * Poco error handler for background threads.
+   */
+  class ErrorHandler : public Poco::ErrorHandler {
+  public:
+    void exception(const Poco::Exception &exc) {
+      log(exc.displayText());
+    }
+
+    void exception(const std::exception &exc) {
+      log(exc.what());
+    }
+
+    void exception() {
+      log("unknown exception");
+    }
+
+    void log(const std::string &message) {
+      Logger::getLogger().error("A thread was terminated by an unhandled exception: %s", message);
+    }
+  };
+
+  /**
+   * Ensure to kill the executor when exiting the scope.
+   */
+  class ExecutorScope {
+  private:
+    ProgramExecutor *_executor;
+
+  public:
+    explicit ExecutorScope(ProgramExecutor *executor) : _executor(executor) {}
+    ~ExecutorScope() { _executor->kill(); }
+  };
+
+  // ----------------------------------------
+  // Global SIGINT and SIGTERM signal handler
+  // ----------------------------------------
+  volatile bool interrupted = false;
+  Poco::Mutex *signalMutex = nullptr;
+  Poco::Condition *signalCond = nullptr;
+
+  void signalHandler(int signal_value) {
+    switch (signal_value) {
+      case SIGINT:
+      case SIGTERM:
+        {
+          Poco::Mutex::ScopedLock scopedLock(*signalMutex);
+          interrupted = true;
+          signalCond->broadcast();
+        }
+        break;
+      default:
+        break;
+    }
   }
 
-  void exception(const std::exception& exc)
-  {
-    Logger::getLogger().error("A thread was terminated by an unhandled exception: %s", exc.what());
-  }
+  /** Type of callback function on handling signal. */
+  typedef std::function<void()> SignalCallbackType;
 
-  void exception()
-  {
-    Logger::getLogger().error("A thread was terminated by an unhandled exception");
-  }
+  /**
+   * The scoped signal handling manager.
+   */
+  class ScopedSignalHandler {
+  private:
+    volatile bool _destroying = false;
+    Poco::Thread _waitSignalThread;
+    SignalCallbackType _callback;
 
-  void log(const std::string& message)
-  {
-    Logger::getLogger().error("A thread was terminated by an unhandled exception: %s", message);
-  }
-};
+    void _installSignalHandler() {
+      signalMutex = new Poco::Mutex();
+      signalCond = new Poco::Condition();
+
+      // install the signal handler
+      struct sigaction action;
+      action.sa_handler = signalHandler;
+      action.sa_flags = 0;
+      sigemptyset(&action.sa_mask);
+      sigaction(SIGINT, &action, NULL);
+      sigaction(SIGTERM, &action, NULL);
+    }
+
+  public:
+    explicit ScopedSignalHandler(SignalCallbackType callback) : _callback(std::move(callback)) {
+      _installSignalHandler();
+
+      // create a background waiting thread, which will call {@arg callback}
+      // on the signal.
+      _waitSignalThread.startFunc([this] {
+        Poco::Mutex::ScopedLock scopedLock(*signalMutex);
+        signalCond->wait(*signalMutex);
+        if (!_destroying) {
+          this->_callback();
+        }
+      });
+    }
+
+    void waitForTermination() {
+      Poco::Mutex::ScopedLock scopedLock(*signalMutex);
+      if (!interrupted) {
+        signalCond->wait(*signalMutex);
+      }
+    }
+
+    ~ScopedSignalHandler() {
+      // uninstall the signal handler
+      struct sigaction action;
+      action.sa_handler = SIG_DFL;
+      action.sa_flags = 0;
+      sigemptyset(&action.sa_mask);
+      sigaction(SIGINT, &action, NULL);
+      sigaction(SIGTERM, &action, NULL);
+
+      // force all threads waiting on the signal to wake up
+      {
+        Poco::Mutex::ScopedLock scopedLock(*signalMutex);
+        _destroying = true;
+        signalCond->broadcast();
+      }
+
+      // join on the background thread if it has started
+      _waitSignalThread.join();
+
+      // now delete the signal facilities
+      delete signalMutex;
+      delete signalCond;
+      signalMutex = nullptr;
+      signalCond = nullptr;
+    }
+  };
+}
 
 
 class MainApp : public BaseApp {
@@ -71,14 +184,10 @@ protected:
           Poco::cat(std::string("\n  "), environList.begin(), environList.end()));
     }
 
-    // Initialize the program executor and the buffer, and start the IO controller
+    // Initialize all related objects.
     ProgramExecutor executor(_args, _environ, _workDir);
     OutputBuffer outputBuffer(_bufferSize);
     IOController ioController(&executor, &outputBuffer);
-    executor.start();
-    ioController.start();
-
-    // Start the HTTP server
     SocketAddress serverAddr;
     if (!_serverHost.empty()) {
       serverAddr = SocketAddress(_serverHost, _serverPort);
@@ -92,8 +201,23 @@ protected:
     server.start();
     Logger::getLogger().info("HTTP server started at http://%s", server.socket().address().toString());
 
-    // Wait for the program to exit, and the IO controller to stop.
-    executor.wait();
+    // Run the main user program.
+    {
+      ExecutorScope mainExecutorScope(&executor);
+      executor.start();
+      ioController.start();
+      {
+        // This nested scope must exist, such that the child process will not install
+        // this signal handler.
+        ScopedSignalHandler scopedSignalHandler([&executor] {
+          Logger::getLogger().info("Termination signal received, kill the user program ...");
+          executor.kill();
+        });
+        executor.wait();
+      }
+    }
+
+    // Wait for the IO controller to stop.
     ioController.join();
     outputBuffer.close();
     Logger::getLogger().info("Total number of bytes output by the program: %z (%s)",
@@ -132,6 +256,14 @@ protected:
       } catch (Poco::Exception const& exc) {
         Logger::getLogger().error("Failed to save the output to %s:\n%s", _saveOutput, exc.displayText());
       }
+    }
+
+    // If no exit, wait for termination
+    if (_noExit) {
+      ScopedSignalHandler scopedSignalHandler([] {
+        Logger::getLogger().info("Termination signal received.");
+      });
+      scopedSignalHandler.waitForTermination();
     }
 
     // Stop the server

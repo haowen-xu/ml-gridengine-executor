@@ -65,6 +65,13 @@ void BaseApp::defineOptions(OptionSet &options) {
           .validator(new RegExpValidator("^([^=]+)=(.*)$")));
 
   options.addOption(
+      Option().fullName("no-exit")
+          .description("Do not exit the executor after the program has finished. "
+                       "Wait for termination signal (e.g., Ctrl+C).")
+          .required(false)
+          .callback(OptionCallback<BaseApp>(this, &BaseApp::handleSetNoExit)));
+
+  options.addOption(
       Option("server-host", "h", "The listening host for the executor server.")
           .argument("HOST")
           .required(false)
@@ -94,6 +101,13 @@ void BaseApp::defineOptions(OptionSet &options) {
           .validator(new RegExpValidator("^http://.+$")));
 
   options.addOption(
+      Option().fullName("callback-token")
+          .description("Set the auth token of the callback API.")
+          .argument("TOKEN")
+          .required(false)
+          .callback(OptionCallback<BaseApp>(this, &BaseApp::handleSetCallbackToken)));
+
+  options.addOption(
       Option().fullName("save-output")
           .description("Save program output to this path.")
           .argument("PATH")
@@ -118,6 +132,10 @@ void BaseApp::handleSetEnviron(const std::string &name, const std::string &value
   std::string eName = value.substr(0, (size_t) pos);
   std::string eValue = value.substr((size_t) pos + 1);
   _environ[eName] = eValue;
+}
+
+void BaseApp::handleSetNoExit(const std::string &name, const std::string &value) {
+  _noExit = true;
 }
 
 void BaseApp::handleSetServerHost(const std::string &name, const std::string &value) {
@@ -147,6 +165,10 @@ void BaseApp::handleSetBufferSize(const std::string &name, const std::string &va
 
 void BaseApp::handleSetCallbackAPI(const std::string &name, const std::string &value) {
   _callbackAPI = value;
+}
+
+void BaseApp::handleSetCallbackToken(const std::string &name, const std::string &value) {
+  _callbackToken = value;
 }
 
 void BaseApp::handleSetSaveOutput(const std::string &name, const std::string &value) {

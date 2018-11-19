@@ -184,34 +184,34 @@ void ProgramExecutor::_killIfRunning(int signal) {
 }
 
 void ProgramExecutor::kill() {
-  REQUIRE_STARTED();
+  if (_status == RUNNING) {
+    Poco::Mutex::ScopedLock scopedLock(*_killMutex);
 
-  Poco::Mutex::ScopedLock scopedLock(*_killMutex);
-
-  // First step, attempt to kill by signal SIGINT
-  _killIfRunning(SIGINT);
-  if (!wait(10 * 1000)) {
-    // Second step, attempt to kill by signal SIGINT.
-    //
-    // Some applications may listen to a double CTRL+C signal, in which the first
-    // Ctrl+C tells the application to exit cleanly, while the second Ctrl+C tells
-    // the application to exit immediately.  We thus attempt to emit this second
-    // Ctrl+C signal here.
-    Logger::getLogger().warn("Program does not exit after received Ctrl+C for 10 seconds, "
-                             "send Ctrl+C again.");
+    // First step, attempt to kill by signal SIGINT
     _killIfRunning(SIGINT);
+    if (!wait(10 * 1000)) {
+      // Second step, attempt to kill by signal SIGINT.
+      //
+      // Some applications may listen to a double CTRL+C signal, in which the first
+      // Ctrl+C tells the application to exit cleanly, while the second Ctrl+C tells
+      // the application to exit immediately.  We thus attempt to emit this second
+      // Ctrl+C signal here.
+      Logger::getLogger().warn("Program does not exit after received Ctrl+C for 10 seconds, "
+                               "send Ctrl+C again.");
+      _killIfRunning(SIGINT);
 
-    if (!wait(20 * 1000)) {
-      Logger::getLogger().warn("Program does not exit after received double Ctrl+C for 20 seconds, "
-                               "now ready to kill it.");
-      _killIfRunning(SIGKILL);
+      if (!wait(20 * 1000)) {
+        Logger::getLogger().warn("Program does not exit after received double Ctrl+C for 20 seconds, "
+                                 "now ready to kill it.");
+        _killIfRunning(SIGKILL);
 
-      if (!wait(60 * 1000)) {
-        Logger::getLogger().warn("Program does not exit after being killed for 60 seconds, now give up.");
-        Poco::Mutex::ScopedLock scopedLock2(*_waitMutex);
-        _status = CANNOT_KILL;
-        close(_pipeFd);  // force closing the pipe, in order for the IO controller to stop
-        _waitCond->broadcast();  // notify all threads waiting on the process to exit
+        if (!wait(60 * 1000)) {
+          Logger::getLogger().warn("Program does not exit after being killed for 60 seconds, now give up.");
+          Poco::Mutex::ScopedLock scopedLock2(*_waitMutex);
+          _status = CANNOT_KILL;
+          close(_pipeFd);  // force closing the pipe, in order for the IO controller to stop
+          _waitCond->broadcast();  // notify all threads waiting on the process to exit
+        }
       }
     }
   }

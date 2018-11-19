@@ -15,10 +15,12 @@ protected:
   ArgList _args;
   Path _workDir;
   EnvironMap _environ;
+  bool _noExit = false;
   std::string _serverHost;
   Poco::UInt16 _serverPort = 0;
   size_t _bufferSize = 4 * 1024UL * 1024UL;
   std::string _callbackAPI;
+  std::string _callbackToken;
   std::string _saveOutput;
 
   void displayHelp(std::ostream& out);
@@ -33,6 +35,8 @@ protected:
 
   void handleSetEnviron(const std::string &name, const std::string &value);
 
+  void handleSetNoExit(const std::string &name, const std::string &value);
+
   void handleSetServerHost(const std::string &name, const std::string &value);
 
   void handleSetServerPort(const std::string &name, const std::string &value);
@@ -40,6 +44,8 @@ protected:
   void handleSetBufferSize(const std::string &name, const std::string &value);
 
   void handleSetCallbackAPI(const std::string &name, const std::string &value);
+
+  void handleSetCallbackToken(const std::string &name, const std::string &value);
 
   void handleSetSaveOutput(const std::string &name, const std::string &value);
 
