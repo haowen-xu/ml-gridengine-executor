@@ -16,7 +16,7 @@
 
 using namespace Poco::Util;
 
-#define BUFFER_SIZE_PATTERN "^(\\d+(?:\\.\\d*)?)\\s*([MK]?B?)$"
+#define BUFFER_SIZE_PATTERN "^(\\d+(?:\\.\\d*)?)\\s*([MKmk]?[Bb]?)$"
 
 
 void BaseApp::displayHelp(std::ostream& out) {
@@ -152,7 +152,7 @@ void BaseApp::handleSetBufferSize(const std::string &name, const std::string &va
   p.match(value, 0, m);
 
   std::string sValue = value.substr(m.at(1).offset, m.at(1).length);
-  std::string sUnit = value.substr(m.at(2).offset, m.at(2).length);
+  std::string sUnit = Poco::toUpper(value.substr(m.at(2).offset, m.at(2).length));
   double bufferSize = Poco::NumberParser::parseFloat(sValue);
   if (sUnit == "M" || sUnit == "MB") {
     bufferSize *= 1024 * 1024;

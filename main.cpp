@@ -1,4 +1,3 @@
-#include <utility>
 #include <iostream>
 #include <signal.h>
 #include <Poco/ErrorHandler.h>
@@ -7,6 +6,7 @@
 #include <Poco/FileStream.h>
 #include <Poco/Condition.h>
 #include <Poco/Mutex.h>
+#include <Poco/Net/HTTPClientSession.h>
 #include <Poco/Net/HTTPServer.h>
 #include "src/version.h"
 #include "src/FormatUtils.h"
