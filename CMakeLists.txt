@@ -8,7 +8,7 @@ project(ml_gridengine_executor)
 set(POCO_PREFIX "/usr/local")
 set(POCO_INCLUDE_DIR "${POCO_PREFIX}/include")
 set(POCO_LIB_DIR "${POCO_PREFIX}/lib")
-set(POCO_LIBS PocoNet PocoUtil PocoFoundation)
+set(POCO_LIBS PocoNet PocoJSON PocoUtil PocoFoundation)
 
 # setup compiler options
 set(CMAKE_CXX_STANDARD 11)
@@ -31,9 +31,11 @@ add_library(
         src/Logger.h
         src/BaseApp.cpp
         src/BaseApp.h
-        src/FormatUtils.cpp
-        src/FormatUtils.h
+        src/Utils.cpp
+        src/Utils.h
         src/IOController.cpp
-        src/IOController.h)
+        src/IOController.h
+        src/CallbackAPI.cpp
+        src/CallbackAPI.h)
 add_executable(ml_gridengine_executor main.cpp)
 target_link_libraries(ml_gridengine_executor "${POCO_LIBS}" ml_gridengine_executor_lib)

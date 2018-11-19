@@ -8,9 +8,11 @@
 #include <string>
 
 
-class FormatUtils {
+class Utils {
 public:
   static std::string formatSize(size_t size);
+
+  static std::string getHostname();
 };
 
 

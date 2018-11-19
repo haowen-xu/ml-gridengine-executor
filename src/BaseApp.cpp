@@ -190,11 +190,16 @@ int BaseApp::main(const std::vector<std::string> &args) {
   } else {
     _workDir = Poco::Path(_workDir).absolute().toString();
   }
-  if (_serverHost.empty()) {
-    _serverHost = "127.0.0.1";
-  }
 
   // run the main application.
-  runApp();
-  return Application::EXIT_OK;
+  try {
+    runApp();
+    return Application::EXIT_OK;
+  } catch (Poco::Exception const& exc) {
+    Logger::getLogger().error(exc.displayText());
+    return Poco::Util::Application::EXIT_SOFTWARE;
+  } catch (std::exception const& exc) {
+    Logger::getLogger().error(exc.what());
+    return Poco::Util::Application::EXIT_SOFTWARE;
+  }
 }

@@ -6,10 +6,11 @@
 #include <Poco/FileStream.h>
 #include <Poco/Condition.h>
 #include <Poco/Mutex.h>
+#include <Poco/JSON/Object.h>
 #include <Poco/Net/HTTPClientSession.h>
 #include <Poco/Net/HTTPServer.h>
 #include "src/version.h"
-#include "src/FormatUtils.h"
+#include "src/Utils.h"
 #include "src/Logger.h"
 #include "src/BaseApp.h"
 #include "src/ProgramExecutor.h"
@@ -17,6 +18,7 @@
 #include "src/WebServerFactory.h"
 #include "src/IOController.h"
 #include "src/AutoFreePtr.h"
+#include "src/CallbackAPI.h"
 
 using namespace Poco::Net;
 
@@ -151,6 +153,18 @@ namespace {
       signalCond = nullptr;
     }
   };
+
+  template <typename T>
+  class AutoPtr {
+    T* _ptr;
+
+  public:
+    explicit AutoPtr(T *ptr) : _ptr(ptr) {}
+    ~AutoPtr() { delete _ptr; _ptr = nullptr; }
+
+    T& operator*() { return *_ptr; }
+    T* operator->() { return _ptr; }
+  };
 }
 
 
@@ -165,7 +179,7 @@ protected:
     logger.info("ML GridEngine Executor " APP_VERSION);
     logger.info("Server host: %s", _serverHost);
     logger.info("Server port: %?d", _serverPort);
-    logger.info("Memory buffer size: %z (%s)", _bufferSize, FormatUtils::formatSize(_bufferSize));
+    logger.info("Memory buffer size: %z (%s)", _bufferSize, Utils::formatSize(_bufferSize));
     logger.info("Working dir: %s", _workDir);
     if (!_callbackAPI.empty()) {
       logger.info("Callback API: %s", _callbackAPI);
@@ -185,6 +199,7 @@ protected:
     }
 
     // Initialize all related objects.
+    CallbackAPI callbackAPI(_callbackAPI, _callbackToken);
     ProgramExecutor executor(_args, _environ, _workDir);
     OutputBuffer outputBuffer(_bufferSize);
     IOController ioController(&executor, &outputBuffer);
@@ -200,6 +215,17 @@ protected:
         new HTTPServerParams());
     server.start();
     Logger::getLogger().info("HTTP server started at http://%s", server.socket().address().toString());
+
+    // Notify the server that we've started the server, and is going to launch the user program.
+    if (!callbackAPI.uri().empty()) {
+      Poco::JSON::Object doc;
+      Poco::JSON::Object executorServerDoc;
+      executorServerDoc.set("hostname", Utils::getHostname());
+      executorServerDoc.set("port", _serverPort);
+      doc.set("eventType", "started");
+      doc.set("server", executorServerDoc);
+      callbackAPI.post(doc);
+    }
 
     // Run the main user program.
     {
@@ -221,7 +247,7 @@ protected:
     ioController.join();
     outputBuffer.close();
     Logger::getLogger().info("Total number of bytes output by the program: %z (%s)",
-        outputBuffer.writtenBytes(), FormatUtils::formatSize(outputBuffer.writtenBytes()));
+        outputBuffer.writtenBytes(), Utils::formatSize(outputBuffer.writtenBytes()));
 
     // Save the output if required
     if (!_saveOutput.empty()) {
@@ -234,7 +260,7 @@ protected:
 
         if (outputBuffer.writtenBytes() > outputBuffer.size()) {
           size_t dSize = outputBuffer.writtenBytes() - outputBuffer.size();
-          std::string dSizeFormatted = FormatUtils::formatSize(dSize);
+          std::string dSizeFormatted = Utils::formatSize(dSize);
           if (!dSizeFormatted.empty() && dSizeFormatted.at(dSizeFormatted.size() - 1) != 'B') {
             outStream << Poco::format("[%z (%s) bytes discarded]", dSize, dSizeFormatted) << std::endl;
           } else {
@@ -249,13 +275,36 @@ protected:
 
         if (outputBuffer.writtenBytes() > outputBuffer.size()) {
           Logger::getLogger().info("The last %s output saved to: %s",
-              FormatUtils::formatSize(outputBuffer.size()), _saveOutput);
+              Utils::formatSize(outputBuffer.size()), _saveOutput);
         } else {
           Logger::getLogger().info("All output saved to: %s", _saveOutput);
         }
       } catch (Poco::Exception const& exc) {
         Logger::getLogger().error("Failed to save the output to %s:\n%s", _saveOutput, exc.displayText());
       }
+    }
+
+    // nofity the callback API that the program has completed
+    if (!callbackAPI.uri().empty()) {
+      Poco::JSON::Object doc;
+      doc.set("eventType", "finished");
+      switch (executor.status()) {
+        case EXITED:
+          doc.set("status", "EXITED");
+          doc.set("exitCode", executor.exitCode());
+          break;
+        case SIGNALLED:
+          doc.set("status", "SIGNALLED");
+          doc.set("exitSignal", executor.exitSignal());
+          break;
+        case CANNOT_KILL:
+          doc.set("status", "CANNOT_KILL");
+          break;
+        default:
+          Logger::getLogger().warn("Invalid executor status after it is completed.");
+          break;
+      }
+      callbackAPI.post(doc);
     }
 
     // If no exit, wait for termination
@@ -274,4 +323,14 @@ protected:
   }
 };
 
-POCO_APP_MAIN(MainApp)
+int main(int argc, char** argv)
+{
+  Poco::AutoPtr<MainApp> pApp(new MainApp());
+  try {
+    pApp->init(argc, argv);
+  } catch (Poco::Exception &exc) {
+    Logger::getLogger().error("Configuration error: " + exc.displayText());
+    return Poco::Util::Application::EXIT_CONFIG;
+  }
+  return pApp->run();
+}
