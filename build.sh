@@ -7,6 +7,8 @@ sudo docker run -ti --rm -v "$(pwd)":"$(pwd)" -w "$(pwd)" \
         mkdir -p build && \
         cd build && \
         cmake \
+            -DCMAKE_C_COMPILER=/usr/bin/x86_64-alpine-linux-musl-gcc \
+            -DCMAKE_CXX_COMPILER=/usr/bin/x86_64-alpine-linux-musl-g++ \
             -DCMAKE_FIND_LIBRARY_SUFFIXES=".a" \
             -DBUILD_SHARED_LIBS=off \
             -DCMAKE_EXE_LINKER_FLAGS="-static" \
