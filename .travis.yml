@@ -4,8 +4,7 @@ services:
 - docker
 script:
 - sh build.sh
-- git clone https://${GH_TOKEN}@github.com/haowen-xu/ml-gridengine-executor.git /tmp/ml-gridengine-executor
-- git checkout release
+- git clone -b release https://${GH_TOKEN}@github.com/haowen-xu/ml-gridengine-executor.git /tmp/ml-gridengine-executor
 - cp ml-gridengine-executor /tmp/ml-gridengine-executor/
 - cd /tmp/ml-gridengine-executor/
 - git add --all .
