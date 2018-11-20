@@ -191,7 +191,9 @@ protected:
     logger.info("ML GridEngine Executor " APP_VERSION);
     logger.info("Shell: %s", shell);
     logger.info("Hostname: %s", hostName);
-    logger.info("Bind host: %s", _serverHost);
+    if (!_serverHost.empty()) {
+      logger.info("Bind host: %s", _serverHost);
+    }
     logger.info("Bind port: %?d", _serverPort);
     logger.info("Wait termination: %s", std::string(_noExit ? "yes" : "no"));
     logger.info("Watch generated files: %s", std::string(_watchGenerated ? "yes" : "no"));
@@ -339,7 +341,7 @@ protected:
       }
     }
 
-    // nofity the callback API that the program has completed
+    // notify the callback API that the program has completed
     if (!callbackAPI.uri().empty()) {
       Poco::JSON::Object doc;
       doc.set("eventType", "finished");

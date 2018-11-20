@@ -4,6 +4,7 @@
 
 #include <vector>
 #include <iostream>
+#include <cassert>
 #include <Poco/NumberParser.h>
 #include <Poco/Net/HTTPServer.h>
 #include <Poco/RegularExpression.h>

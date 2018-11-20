@@ -6,6 +6,8 @@
 #include <errno.h>
 #include <signal.h>
 #include <unistd.h>
+#include <sys/types.h>
+#include <sys/wait.h>
 #include <Poco/Condition.h>
 #include <Poco/Exception.h>
 #include <Poco/Mutex.h>

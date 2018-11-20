@@ -2,7 +2,9 @@
 // Created by 许昊文 on 2018/11/9.
 //
 
+#include <memory>
 #include <algorithm>
+#include <cassert>
 #include <cstdlib>
 #include <queue>
 #include <Poco/Condition.h>

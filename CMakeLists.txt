@@ -1,17 +1,17 @@
-# THIS FILE IS ONLY FOR DEVELOPMENT!
 # USE ./build.sh TO BUILD A STATIC RELEASE FOR LINUX DISTRIBUTIONS.
 
-cmake_minimum_required(VERSION 3.12)
+cmake_minimum_required(VERSION 3.10)
 project(ml_gridengine_executor)
 
 # setup Poco libraries
 set(POCO_PREFIX "/usr/local")
 set(POCO_INCLUDE_DIR "${POCO_PREFIX}/include")
 set(POCO_LIB_DIR "${POCO_PREFIX}/lib")
-set(POCO_LIBS PocoNet PocoJSON PocoUtil PocoFoundation)
-
+set(POCO_LIBS PocoNetSSL PocoCrypto PocoNet PocoZip PocoUtil PocoXML PocoJSON PocoFoundation)
+set(POCO_DEP_LIBS pthread ssl crypto)
 # setup compiler options
 set(CMAKE_CXX_STANDARD 11)
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11")
 include_directories("${POCO_INCLUDE_DIR}")
 link_directories("${POCO_LIB_DIR}")
 
@@ -38,4 +38,4 @@ add_library(
         src/CallbackAPI.cpp
         src/CallbackAPI.h src/GeneratedFilesWatcher.cpp src/GeneratedFilesWatcher.h)
 add_executable(ml_gridengine_executor main.cpp)
-target_link_libraries(ml_gridengine_executor "${POCO_LIBS}" ml_gridengine_executor_lib)
+target_link_libraries(ml_gridengine_executor ml_gridengine_executor_lib "${POCO_LIBS}" "${POCO_DEP_LIBS}")
