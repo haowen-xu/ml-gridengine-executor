@@ -1,4 +1,7 @@
+/build
 /cmake-build-*
 /.idea
-/ml-gridengine-executor
 .DS_Store
+.pytest_cache
+*.iml
+*.pyc

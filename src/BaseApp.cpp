@@ -88,7 +88,7 @@ void BaseApp::defineOptions(OptionSet &options) {
   options.addOption(
       Option("server-port", "p", "The listening port for the executor server.")
           .argument("PORT")
-          .required(true)
+          .required(false)
           .callback(OptionCallback<BaseApp>(this, &BaseApp::handleSetServerPort))
           .validator(new IntValidator(0, 65535)));
 

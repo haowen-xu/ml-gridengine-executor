@@ -32,6 +32,13 @@ namespace {
   inline std::string errorMessage() {
     return std::string(strerror(errno));
   }
+
+  EnvironMap& getDefaultEnvironMap() {
+    static EnvironMap environMap = {
+        {"PYTHONUNBUFFERED", "1"}
+    };
+    return environMap;
+  }
 }
 
 ProgramExecutor::ProgramExecutor(ArgList args, EnvironMap environMap, Path workDir, bool captureOutput,
@@ -110,8 +117,16 @@ void ProgramExecutor::start() {
       programArgs[i] = copyAsCString(_args.at(i));
     }
 
+    // set some default environmental variables
+    EnvironMap &defaultEnviron = getDefaultEnvironMap();
+    for (auto const &it: defaultEnviron) {
+      if (!Poco::Environment::has(it.first)) {
+        Poco::Environment::set(it.first, it.second);
+      }
+    }
+
     // set the environmental variables
-    for (auto &it : _environ) {
+    for (auto const &it : _environ) {
       Poco::Environment::set(it.first, it.second);
     }
 

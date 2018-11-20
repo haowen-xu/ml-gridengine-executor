@@ -14,6 +14,6 @@ sudo docker run -ti --rm -v "$(pwd)":"$(pwd)" -w "$(pwd)" \
             -DCMAKE_BUILD_TYPE=Release \
             .. && \
         make VERBOSE=1 && \
-        cp ml_gridengine_executor ml-gridengine-executor && \
-        strip -s ml-gridengine-executor
+        strip -s ml-gridengine-executor && \
+        strip -s ml-gridengine-executor-tests
     '

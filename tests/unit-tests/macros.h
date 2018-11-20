@@ -1,0 +1,10 @@
+//
+// Created by 许昊文 on 2018/11/20.
+//
+
+#ifndef ML_GRIDENGINE_EXECUTOR_MACROS_H
+#define ML_GRIDENGINE_EXECUTOR_MACROS_H
+
+#define REQUIRE_EQUALS(A, B) REQUIRE((A) == (B))
+
+#endif //ML_GRIDENGINE_EXECUTOR_MACROS_H

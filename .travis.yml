@@ -1,10 +1,13 @@
 language: python
+python:
+  - 3.5
 sudo: required
 services:
-- docker
+  - docker
 env:
   global:
   - secure: pWxcnvLOETn6z9xZXJptB2FgLAu7kOWXb3u8Rg5vEuX1Dr9RRDikpYzZ8KuyMHOxx5ORzCGPGAmOLAaH+kgdVaNsy5492YGqhsk91XrGvfKYeRasrbMX+qomP1APoWCjwLTTwkNg0QAhGdscFBcel7F0O2uS1gNkGb+54Hkbmr18H0m0nk/l3VTaGNmBNLCdB9X4pbonrzbOjl5CFmB2zAY8MBQAzGMAfCFYiwWf4wmDS4aSIYxVms1lEqLZK45Qpvy4bI6X6QxBpCLoYtjMBaNOse1abO4ElS11wOTIfn1CmW3C8ZT+av8o3+EXElalcwkRzozZTMShdJ7JyzqnqtamCv7A7xCzh7lM4Yrskw/Prn9eIDy09VpswdFBErNwXKuhY682VU4O3uhqJPyv8qRV6RRZd4YVTxMVIGJZHxkqiHPvxycooj9fqoJyZItUUk8HB6PL2mciwzvg5+J/ImI6CcDw6wPkqm+bcyPYaCiHB2uefQFbGn7kasrSx1lTSvUQGMJgSCL3+q1uOhmYw/bF6csbduMpB50Pv3fov5u2Q639O5NzRb8lk5mpSY0bLS4yXUEVnC9ByISIdm4lH282Y0nvU15r3j1q640mq99NYTfYe5M+6T/YOPAjKWTNt0bagn+hregopBxBMzWNIhmM7FpXFkt/C541EftipXI=
 script:
-- bash build.sh
-- bash push-release.sh
+  - bash build.sh
+  - bash run-tests.sh
+  - bash push-release.sh

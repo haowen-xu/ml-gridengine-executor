@@ -11,17 +11,17 @@
 #include <Poco/Net/DNS.h>
 #include <Poco/Net/HTTPClientSession.h>
 #include <Poco/Net/HTTPServer.h>
-#include "src/version.h"
-#include "src/Utils.h"
-#include "src/Logger.h"
-#include "src/BaseApp.h"
-#include "src/ProgramExecutor.h"
-#include "src/OutputBuffer.h"
-#include "src/WebServerFactory.h"
-#include "src/IOController.h"
-#include "src/AutoFreePtr.h"
-#include "src/CallbackAPI.h"
-#include "src/GeneratedFilesWatcher.h"
+#include "version.h"
+#include "Utils.h"
+#include "Logger.h"
+#include "BaseApp.h"
+#include "ProgramExecutor.h"
+#include "OutputBuffer.h"
+#include "WebServerFactory.h"
+#include "IOController.h"
+#include "AutoFreePtr.h"
+#include "CallbackAPI.h"
+#include "GeneratedFilesWatcher.h"
 
 using namespace Poco::Net;
 
@@ -191,10 +191,6 @@ protected:
     logger.info("ML GridEngine Executor " APP_VERSION);
     logger.info("Shell: %s", shell);
     logger.info("Hostname: %s", hostName);
-    if (!_serverHost.empty()) {
-      logger.info("Bind host: %s", _serverHost);
-    }
-    logger.info("Bind port: %?d", _serverPort);
     logger.info("Wait termination: %s", std::string(_noExit ? "yes" : "no"));
     logger.info("Watch generated files: %s", std::string(_watchGenerated ? "yes" : "no"));
     logger.info("Memory buffer size: %z (%s)", _bufferSize, Utils::formatSize(_bufferSize));
@@ -244,14 +240,14 @@ protected:
         ServerSocket(serverAddr),
         new HTTPServerParams());
     server.start();
-    Logger::getLogger().info("HTTP server started at http://%s", server.socket().address().toString());
+    Logger::getLogger().info("HTTP server started at http://%s:%?u", hostName, server.socket().address().port());
 
     // Notify the server that we've started the server, and is going to launch the user program.
     if (!callbackAPI.uri().empty()) {
       Poco::JSON::Object doc;
       Poco::JSON::Object executorServerDoc;
       executorServerDoc.set("hostname", hostName);
-      executorServerDoc.set("port", _serverPort);
+      executorServerDoc.set("port", server.socket().address().port());
       doc.set("eventType", "started");
       doc.set("server", executorServerDoc);
       callbackAPI.post(doc);
