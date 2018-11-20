@@ -1,3 +1,4 @@
+#include <memory>
 #include <iostream>
 #include <signal.h>
 #include <Poco/ErrorHandler.h>
@@ -7,6 +8,7 @@
 #include <Poco/Condition.h>
 #include <Poco/Mutex.h>
 #include <Poco/JSON/Object.h>
+#include <Poco/Net/DNS.h>
 #include <Poco/Net/HTTPClientSession.h>
 #include <Poco/Net/HTTPServer.h>
 #include "src/version.h"
@@ -19,6 +21,7 @@
 #include "src/IOController.h"
 #include "src/AutoFreePtr.h"
 #include "src/CallbackAPI.h"
+#include "src/GeneratedFilesWatcher.h"
 
 using namespace Poco::Net;
 
@@ -198,6 +201,12 @@ protected:
           Poco::cat(std::string("\n  "), environList.begin(), environList.end()));
     }
 
+    // Prepare for the working directory
+    Poco::File workDirFile(_workDir);
+    if (!workDirFile.isDirectory()) {
+      workDirFile.createDirectories();
+    }
+
     // Initialize all related objects.
     CallbackAPI callbackAPI(_callbackAPI, _callbackToken);
     ProgramExecutor executor(_args, _environ, _workDir);
@@ -220,7 +229,7 @@ protected:
     if (!callbackAPI.uri().empty()) {
       Poco::JSON::Object doc;
       Poco::JSON::Object executorServerDoc;
-      executorServerDoc.set("hostname", Utils::getHostname());
+      executorServerDoc.set("hostname", Poco::Net::DNS::hostName());
       executorServerDoc.set("port", _serverPort);
       doc.set("eventType", "started");
       doc.set("server", executorServerDoc);
@@ -229,17 +238,44 @@ protected:
 
     // Run the main user program.
     {
-      ExecutorScope mainExecutorScope(&executor);
-      executor.start();
-      ioController.start();
+      std::map<std::string, std::string> postedGeneratedFiles;
+      std::shared_ptr<GeneratedFilesWatcher> filesWatcher;
+      if (_watchGenerated && !callbackAPI.uri().empty()) {
+        filesWatcher = std::make_shared<GeneratedFilesWatcher>(
+            _workDir,
+            [&callbackAPI, &postedGeneratedFiles] (std::string const& fileTag, Poco::JSON::Object const& jsonObject) {
+              std::ostringstream oss;
+              jsonObject.stringify(oss);
+              std::string jsonText = oss.str();
+              if (!postedGeneratedFiles.count(fileTag) || jsonText != postedGeneratedFiles[fileTag]) {
+                Logger::getLogger().info("Received new generated %s: %s", fileTag, jsonText);
+                Poco::JSON::Object doc;
+                doc.set("eventType", "generatedFile");
+                doc.set("fileTag", fileTag);
+                doc.set("fileData", jsonObject);
+                callbackAPI.post(doc);
+                postedGeneratedFiles[fileTag] = jsonText;
+              }
+            });
+        filesWatcher->start();
+      }
       {
-        // This nested scope must exist, such that the child process will not install
-        // this signal handler.
-        ScopedSignalHandler scopedSignalHandler([&executor] {
-          Logger::getLogger().info("Termination signal received, kill the user program ...");
-          executor.kill();
-        });
-        executor.wait();
+        ExecutorScope mainExecutorScope(&executor);
+        executor.start();
+        ioController.start();
+        {
+          // This nested scope must exist, such that the child process will not install
+          // this signal handler.
+          ScopedSignalHandler scopedSignalHandler([&executor] {
+            Logger::getLogger().info("Termination signal received, kill the user program ...");
+            executor.kill();
+          });
+          executor.wait();
+        }
+      }
+      if (filesWatcher) {
+        filesWatcher->stop();
+        filesWatcher->collectAll(); // force reading all watched files before exit.
       }
     }
 

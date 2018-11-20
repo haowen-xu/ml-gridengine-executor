@@ -45,6 +45,13 @@ public:
    * @throw Poco::IllegalStateException If uri is empty.
    */
   void post(Poco::JSON::Object const& doc);
+
+  /**
+   * Post to the callback API.
+   * @param doc The serialized JSON object to be posted.
+   * @throw Poco::IllegalStateException If uri is empty.
+   */
+  void post(std::string const& doc);
 };
 
 

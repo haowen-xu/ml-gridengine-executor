@@ -23,9 +23,3 @@ std::string Utils::formatSize(size_t size) {
     return Poco::format("%zB", size);
   }
 }
-
-std::string Utils::getHostname() {
-  char buf[256];
-  gethostname(buf, sizeof(buf));
-  return std::string(buf);
-}

@@ -67,9 +67,16 @@ void BaseApp::defineOptions(OptionSet &options) {
   options.addOption(
       Option().fullName("no-exit")
           .description("Do not exit the executor after the program has finished. "
-                       "Wait for termination signal (e.g., Ctrl+C).")
+                       "Wait for termination signals.")
           .required(false)
           .callback(OptionCallback<BaseApp>(this, &BaseApp::handleSetNoExit)));
+
+  options.addOption(
+      Option().fullName("watch-generated")
+          .description("Watch generated JSON files (\"config.json\", \"config.defaults.json\", "
+                       "\"result.json\"), and submit them via the callback API.")
+          .required(false)
+          .callback(OptionCallback<BaseApp>(this, &BaseApp::handleSetWatchGenerated)));
 
   options.addOption(
       Option("server-host", "h", "The listening host for the executor server.")
@@ -136,6 +143,10 @@ void BaseApp::handleSetEnviron(const std::string &name, const std::string &value
 
 void BaseApp::handleSetNoExit(const std::string &name, const std::string &value) {
   _noExit = true;
+}
+
+void BaseApp::handleSetWatchGenerated(const std::string &name, const std::string &value) {
+  _watchGenerated = true;
 }
 
 void BaseApp::handleSetServerHost(const std::string &name, const std::string &value) {

@@ -16,6 +16,7 @@ protected:
   Path _workDir;
   EnvironMap _environ;
   bool _noExit = false;
+  bool _watchGenerated = false;
   std::string _serverHost;
   Poco::UInt16 _serverPort = 0;
   size_t _bufferSize = 4 * 1024UL * 1024UL;
@@ -36,6 +37,8 @@ protected:
   void handleSetEnviron(const std::string &name, const std::string &value);
 
   void handleSetNoExit(const std::string &name, const std::string &value);
+
+  void handleSetWatchGenerated(const std::string &name, const std::string &value);
 
   void handleSetServerHost(const std::string &name, const std::string &value);
 

@@ -36,6 +36,6 @@ add_library(
         src/IOController.cpp
         src/IOController.h
         src/CallbackAPI.cpp
-        src/CallbackAPI.h)
+        src/CallbackAPI.h src/GeneratedFilesWatcher.cpp src/GeneratedFilesWatcher.h)
 add_executable(ml_gridengine_executor main.cpp)
 target_link_libraries(ml_gridengine_executor "${POCO_LIBS}" ml_gridengine_executor_lib)

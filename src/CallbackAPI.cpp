@@ -41,41 +41,41 @@ CallbackAPI::~CallbackAPI() {
 }
 
 void CallbackAPI::post(Poco::JSON::Object const &doc) {
+  std::stringstream oss;
+  doc.stringify(oss);
+  post(oss.str());
+}
+
+void CallbackAPI::post(std::string const &doc) {
+  // Parse the arguments.
   if (_uri.empty()) {
     throw Poco::IllegalStateException("uri is not configured.");
   }
 
-  // Serialize the JSON object
-  std::string jsonPayload;
-  {
-    std::stringstream oss;
-    doc.stringify(oss);
-    jsonPayload = oss.str();
-  }
-
-  // Parse the API URI.
   Poco::URI uri(_uri);
   std::string path(uri.getPathAndQuery());
   if (path.empty()) {
     path = "/";
   }
+  std::string token(_token);
+  long timeout(_timeout);
 
   // Initialize the HTTP connection
   HTTPClientSession session(uri.getHost(), uri.getPort());
-  session.setTimeout(Poco::Timespan((Poco::Int64)_timeout * 1000));
+  session.setTimeout(Poco::Timespan((Poco::Int64)timeout * 1000));
 
   // Prepare for the request
   HTTPRequest request(HTTPRequest::HTTP_GET, path, HTTPMessage::HTTP_1_1);
   request.setMethod("POST");
   request.setContentType("application/json");
-  request.setContentLength(jsonPayload.length());
-  if (!_token.empty()) {
-    request.add("Authentication", Poco::format("TOKEN %s", encodeToken(_token)));
+  request.setContentLength(doc.length());
+  if (!token.empty()) {
+    request.add("Authentication", Poco::format("TOKEN %s", encodeToken(token)));
   }
 
   // Send the request
   auto &os = session.sendRequest(request);
-  os.write(jsonPayload.c_str(), jsonPayload.length());
+  os.write(doc.c_str(), doc.length());
 
   // Now get the response
   HTTPResponse response;
