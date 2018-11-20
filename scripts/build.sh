@@ -15,5 +15,5 @@ sudo docker run -ti --rm -v "$(pwd)":"$(pwd)" -w "$(pwd)" \
             .. && \
         make VERBOSE=1 && \
         strip -s ml-gridengine-executor && \
-        strip -s ml-gridengine-executor-tests
+        strip -s ml-gridengine-executor-unit-tests
     '
