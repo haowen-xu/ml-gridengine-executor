@@ -23,6 +23,7 @@ protected:
   std::string _callbackAPI;
   std::string _callbackToken;
   std::string _saveOutput;
+  std::string _runAfter;
 
   void displayHelp(std::ostream& out);
 
@@ -51,6 +52,8 @@ protected:
   void handleSetCallbackToken(const std::string &name, const std::string &value);
 
   void handleSetSaveOutput(const std::string &name, const std::string &value);
+
+  void handleSetRunAfter(const std::string &name, const std::string &value);
 
   virtual int runApp() = 0;
 

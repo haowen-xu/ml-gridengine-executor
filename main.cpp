@@ -177,18 +177,37 @@ protected:
     // Install the global error handler
     Poco::ErrorHandler::set(new ErrorHandler());
 
+    // Get the system shell configuration
+    std::string shell = getenv("SHELL");
+    if (shell.empty()) {
+      shell = "sh";
+    }
+
+    // Get the server hostname
+    std::string hostName = Poco::Net::DNS::hostName();
+
     // Display the configurations specified by the CLI arguments.
     auto& logger = Logger::getLogger();
     logger.info("ML GridEngine Executor " APP_VERSION);
-    logger.info("Server host: %s", _serverHost);
-    logger.info("Server port: %?d", _serverPort);
+    logger.info("Shell: %s", shell);
+    logger.info("Hostname: %s", hostName);
+    logger.info("Bind host: %s", _serverHost);
+    logger.info("Bind port: %?d", _serverPort);
+    logger.info("Wait termination: %s", std::string(_noExit ? "yes" : "no"));
+    logger.info("Watch generated files: %s", std::string(_watchGenerated ? "yes" : "no"));
     logger.info("Memory buffer size: %z (%s)", _bufferSize, Utils::formatSize(_bufferSize));
     logger.info("Working dir: %s", _workDir);
     if (!_callbackAPI.empty()) {
       logger.info("Callback API: %s", _callbackAPI);
     }
+    if (!_callbackToken.empty()) {
+      logger.info("Callback Token: %s", _callbackToken);
+    }
     if (!_saveOutput.empty()) {
       logger.info("Save output to: %s", _saveOutput);
+    }
+    if (!_runAfter.empty()) {
+      logger.info("Run-after command: %s", _runAfter);
     }
     logger.info("Program arguments:\n  %s",
         Poco::cat(std::string("\n  "), _args.begin(), _args.end()));
@@ -229,7 +248,7 @@ protected:
     if (!callbackAPI.uri().empty()) {
       Poco::JSON::Object doc;
       Poco::JSON::Object executorServerDoc;
-      executorServerDoc.set("hostname", Poco::Net::DNS::hostName());
+      executorServerDoc.set("hostname", hostName);
       executorServerDoc.set("port", _serverPort);
       doc.set("eventType", "started");
       doc.set("server", executorServerDoc);
@@ -343,8 +362,20 @@ protected:
       callbackAPI.post(doc);
     }
 
+    // run command after execution
+    if (!_runAfter.empty() && !interrupted) {
+      ArgList runAfterArgs = {shell, "-c", _runAfter};
+      ProgramExecutor runAfterExecutor(runAfterArgs, _environ, std::string(), false, "Run-after command");
+      runAfterExecutor.start();
+      ScopedSignalHandler scopedSignalHandler([&runAfterExecutor] {
+        Logger::getLogger().info("Termination signal received, kill \"run after\" command.");
+        runAfterExecutor.kill();
+      });
+      runAfterExecutor.wait();
+    }
+
     // If no exit, wait for termination
-    if (_noExit) {
+    if (_noExit && !interrupted) {
       ScopedSignalHandler scopedSignalHandler([] {
         Logger::getLogger().info("Termination signal received.");
       });

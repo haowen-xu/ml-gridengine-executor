@@ -31,7 +31,10 @@ namespace {
   }
 }
 
-ProgramExecutor::ProgramExecutor(ArgList args, EnvironMap environMap, Path workDir) :
+ProgramExecutor::ProgramExecutor(ArgList args, EnvironMap environMap, Path workDir, bool captureOutput,
+                                 std::string const& loggingTag) :
+  _captureOutput(captureOutput),
+  _loggingTag(loggingTag),
   _args(std::move(args)),
   _environ(std::move(environMap)),
   _workDir(std::move(workDir)),
@@ -64,22 +67,25 @@ ProgramExecutor::~ProgramExecutor() {
 
 void ProgramExecutor::start() {
   if (_status != NOT_STARTED) {
-    throw Poco::IllegalStateException("Process has started.");
+    throw Poco::IllegalStateException("Process is already started.");
   }
 
   int pfd[2] = {0};
-  if (pipe(pfd) != 0) {
-    throw Poco::SystemException("Failed to open pipe: " + errorMessage());
+  if (_captureOutput) {
+    if (pipe(pfd) != 0) {
+      throw Poco::SystemException("Failed to open pipe: " + errorMessage());
+    }
   }
 
   _processId = fork();
   if (_processId == 0) {  // child process
-    close(pfd[0]);
-    _pipeFd = pfd[1];
-
-    // redirect stdout and stderr to the pipe
-    dup2(_pipeFd, STDOUT_FILENO);
-    dup2(_pipeFd, STDERR_FILENO);
+    if (_captureOutput) {
+      close(pfd[0]);
+      _pipeFd = pfd[1];
+      // redirect stdout and stderr to the pipe
+      dup2(_pipeFd, STDOUT_FILENO);
+      dup2(_pipeFd, STDERR_FILENO);
+    }
 
     // change the current directory
     if (!_workDir.empty()) {
@@ -113,13 +119,15 @@ void ProgramExecutor::start() {
     }
 
   } else { // parent process
-    close(pfd[1]);
-    _pipeFd = pfd[0];
+    if (_captureOutput) {
+      close(pfd[1]);
+      _pipeFd = pfd[0];
+    }
     _status = RUNNING;
     _waitThread->startFunc([this] {
       this->_waitInBackground();
     });
-    Logger::getLogger().info("Program launched.");
+    Logger::getLogger().info("%s launched.", _loggingTag);
   }
 }
 
@@ -133,27 +141,22 @@ void ProgramExecutor::_waitInBackground() {
     if (WIFEXITED(status)) {
       _status = EXITED;
       _waitStatus = status;
+      Logger::getLogger().info("%s exited normally with code: %d", _loggingTag, exitCode());
       _waitCond->broadcast();
-      Logger::getLogger().info("Program exited normally with code: %d", exitCode());
 
     } else if (WIFSIGNALED(status)) {
       _status = SIGNALLED;
       _waitStatus = status;
+      Logger::getLogger().info("%s killed by signal: %d", _loggingTag, exitSignal());
       _waitCond->broadcast();
-      Logger::getLogger().info("Program killed by signal: %d", exitSignal());
 
     } else {
-      Logger::getLogger().warn("Unexpected wait status: %x", _waitStatus);
+      Logger::getLogger().warn("%s: unexpected wait status: %x", _loggingTag, _waitStatus);
     }
 
   } else {
-    Logger::getLogger().error("Failed to wait for child process: %s", errorMessage());
+    Logger::getLogger().error("%s: failed to wait for child process: %s", _loggingTag, errorMessage());
   }
-}
-
-bool ProgramExecutor::poll() {
-  REQUIRE_STARTED();
-  return _status != RUNNING;
 }
 
 bool ProgramExecutor::wait(long timeout) {
@@ -172,7 +175,6 @@ bool ProgramExecutor::wait(long timeout) {
 }
 
 ssize_t ProgramExecutor::readOutput(void *target, size_t count) {
-  REQUIRE_STARTED();
   return read(_pipeFd, target, count);
 }
 
@@ -196,17 +198,17 @@ void ProgramExecutor::kill() {
       // Ctrl+C tells the application to exit cleanly, while the second Ctrl+C tells
       // the application to exit immediately.  We thus attempt to emit this second
       // Ctrl+C signal here.
-      Logger::getLogger().warn("Program does not exit after received Ctrl+C for 10 seconds, "
-                               "send Ctrl+C again.");
+      Logger::getLogger().warn("%s does not exit after received Ctrl+C for 10 seconds, "
+                               "send Ctrl+C again.", _loggingTag);
       _killIfRunning(SIGINT);
 
       if (!wait(20 * 1000)) {
-        Logger::getLogger().warn("Program does not exit after received double Ctrl+C for 20 seconds, "
-                                 "now ready to kill it.");
+        Logger::getLogger().warn("%s does not exit after received double Ctrl+C for 20 seconds, "
+                                 "now ready to kill it.", _loggingTag);
         _killIfRunning(SIGKILL);
 
         if (!wait(60 * 1000)) {
-          Logger::getLogger().warn("Program does not exit after being killed for 60 seconds, now give up.");
+          Logger::getLogger().warn("%s does not exit after being killed for 60 seconds, now give up.", _loggingTag);
           Poco::Mutex::ScopedLock scopedLock2(*_waitMutex);
           _status = CANNOT_KILL;
           close(_pipeFd);  // force closing the pipe, in order for the IO controller to stop

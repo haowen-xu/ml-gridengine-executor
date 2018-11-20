@@ -121,6 +121,17 @@ void BaseApp::defineOptions(OptionSet &options) {
           .required(false)
           .callback(OptionCallback<BaseApp>(this, &BaseApp::handleSetSaveOutput))
           .validator(new RegExpValidator("^.+$")));
+
+  options.addOption(
+      Option().fullName("run-after")
+          .description("Run shell command after the program has executed. "
+                       "It will always run under the working directory of the executor, rather than "
+                       "that specified by \"--work-dir\". Also, the failure of this command will not "
+                       "affect the final status of the user program.")
+          .argument("COMMAND")
+          .required(false)
+          .callback(OptionCallback<BaseApp>(this, &BaseApp::handleSetRunAfter))
+          .validator(new RegExpValidator("^.+$")));
 }
 
 void BaseApp::handleHelp(const std::string &name, const std::string &value) {
@@ -184,6 +195,10 @@ void BaseApp::handleSetCallbackToken(const std::string &name, const std::string 
 
 void BaseApp::handleSetSaveOutput(const std::string &name, const std::string &value) {
   _saveOutput = value;
+}
+
+void BaseApp::handleSetRunAfter(const std::string &name, const std::string &value) {
+  _runAfter = value;
 }
 
 int BaseApp::main(const std::vector<std::string> &args) {

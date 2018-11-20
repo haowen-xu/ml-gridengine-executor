@@ -29,14 +29,14 @@ void GeneratedFilesWatcher::start() {
   _watcher->itemAdded.add(Poco::delegate(this, &GeneratedFilesWatcher::_onFileUpdated));
   _watcher->itemModified.add(Poco::delegate(this, &GeneratedFilesWatcher::_onFileUpdated));
   _watcher->itemMovedTo.add(Poco::delegate(this, &GeneratedFilesWatcher::_onFileUpdated));
-  Logger::getLogger().info("Generated files watcher installed: %s", _workDir);
+  Logger::getLogger().info("Generated files watcher installed.");
 }
 
 void GeneratedFilesWatcher::stop() {
   if (_watcher != nullptr) {
     delete _watcher;
     _watcher = nullptr;
-    Logger::getLogger().info("Generated files watcher uninstalled: %s", _workDir);
+    Logger::getLogger().info("Generated files watcher uninstalled.");
   }
 }
 

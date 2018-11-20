@@ -34,10 +34,11 @@ typedef enum {
 class ProgramExecutor {
   DEFINE_NON_PRIMITIVE_PROPERTY(ArgList, args);
   DEFINE_NON_PRIMITIVE_PROPERTY(EnvironMap, environ);
-  DEFINE_NON_PRIMITIVE_PROPERTY(std::string, workDir);
+  DEFINE_NON_PRIMITIVE_PROPERTY(Path, workDir);
 
 private:
-
+  bool _captureOutput;
+  std::string _loggingTag;
   Poco::Mutex *_waitMutex;          // mutex for operating on the wait condition
   Poco::Condition *_waitCond;       // the wait conditional variable
   Poco::Thread *_waitThread;        // the thread for actually perform waiting
@@ -82,7 +83,8 @@ public:
   }
 
   /** Construct a new {@class ProgramExecutor}. */
-  explicit ProgramExecutor(ArgList args, EnvironMap environMap=EnvironMap(), Path workDir=Path());
+  explicit ProgramExecutor(ArgList args, EnvironMap environMap=EnvironMap(), Path workDir=Path(),
+                           bool captureOutput=true, std::string const& loggingTag="Program");
 
   /** Start the user program. */
   void start();
@@ -90,20 +92,14 @@ public:
   /**
    * Read program output from the pipe.
    *
+   * For performance consideration, this method does not perform any checks
+   * (e.g., whether or not the program has started, or the output is captured).
+   *
    * @param target Target array.
    * @param count Maximum number of bytes to read.
    * @return Actual number of bytes read.
-   * @throw Poco::IllegalStateException If the program has not started.
    */
   ssize_t readOutput(void* target, size_t count);
-
-  /**
-   * Try to get the exit code of the program.
-   *
-   * @return Whether or not the program has exited.
-   * @throw Poco::IllegalStateException If the program has not started.
-   */
-  bool poll();
 
   /**
    * Wait the user program to exit.
