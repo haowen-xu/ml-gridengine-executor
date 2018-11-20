@@ -1,4 +1,4 @@
-# USE ./build.sh TO BUILD A STATIC RELEASE FOR LINUX DISTRIBUTIONS.
+# USE ./scripts/build.sh TO BUILD A STATIC RELEASE FOR LINUX DISTRIBUTIONS.
 
 cmake_minimum_required(VERSION 3.10)
 project(ml_gridengine_executor)
