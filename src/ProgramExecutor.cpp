@@ -13,6 +13,7 @@
 #include <Poco/Mutex.h>
 #include <Poco/RunnableAdapter.h>
 #include <Poco/Thread.h>
+#include <Poco/Environment.h>
 #include "ProgramExecutor.h"
 #include "Logger.h"
 
@@ -104,14 +105,14 @@ void ProgramExecutor::start() {
     char** programArgs = (char**)malloc(sizeof(char**) * (_args.size() + 1));
 
     programArgs[0] = programFile;
-    programArgs[_args.size()] = 0;
+    programArgs[_args.size()] = nullptr;
     for (size_t i=1; i<_args.size(); ++i) {
       programArgs[i] = copyAsCString(_args.at(i));
     }
 
     // set the environmental variables
     for (auto &it : _environ) {
-      setenv(it.first.c_str(), it.second.c_str(), 1);
+      Poco::Environment::set(it.first, it.second);
     }
 
     // start the user program

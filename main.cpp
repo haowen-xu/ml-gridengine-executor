@@ -366,8 +366,28 @@ protected:
 
     // run command after execution
     if (!_runAfter.empty() && !interrupted) {
+      // prepare for the command
       ArgList runAfterArgs = {shell, "-c", _runAfter};
-      ProgramExecutor runAfterExecutor(runAfterArgs, _environ, std::string(), false, "Run-after command");
+      EnvironMap environ(_environ);
+      environ[ML_GRIDENGINE_ENV_PREFIX "PROGRAM_WORK_DIR"] = _workDir;
+      switch (executor.status()) {
+        case EXITED:
+          environ[ML_GRIDENGINE_ENV_PREFIX "PROGRAM_EXIT_STATUS"] = "EXITED";
+          environ[ML_GRIDENGINE_ENV_PREFIX "PROGRAM_EXIT_CODE"] = Poco::format("%d", executor.exitCode());
+          break;
+        case SIGNALLED:
+          environ[ML_GRIDENGINE_ENV_PREFIX "PROGRAM_EXIT_STATUS"] = "SIGNALLED";
+          environ[ML_GRIDENGINE_ENV_PREFIX "PROGRAM_EXIT_SIGNAL"] = Poco::format("%d", executor.exitSignal());
+          break;
+        case CANNOT_KILL:
+          environ[ML_GRIDENGINE_ENV_PREFIX "PROGRAM_EXIT_STATUS"] = "CANNOT_KILL";
+          break;
+        default:
+          break;
+      }
+
+      // run the command
+      ProgramExecutor runAfterExecutor(runAfterArgs, environ, std::string(), false, "Run-after command");
       runAfterExecutor.start();
       ScopedSignalHandler scopedSignalHandler([&runAfterExecutor] {
         Logger::getLogger().info("Termination signal received, kill \"run after\" command.");

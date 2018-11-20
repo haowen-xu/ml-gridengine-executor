@@ -6,6 +6,7 @@
 #define ML_GRIDENGINE_EXECUTOR_MACROS_H
 
 #define MLGridEngineExecutor_API
+#define ML_GRIDENGINE_ENV_PREFIX "ML_GRIDENGINE_"
 #define DEFINE_NON_PRIMITIVE_PROPERTY(TYPE, NAME) \
   private: \
     TYPE _##NAME; \
