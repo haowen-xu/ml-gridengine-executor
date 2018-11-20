@@ -1,9 +1,9 @@
 #!/bin/bash
 
+mkdir -p build || exit 1
 sudo docker run -ti --rm -v "$(pwd)":"$(pwd)" -w "$(pwd)" \
     haowenxu/static-cpp-build \
     sh -c '
-        mkdir -p build && \
         cd build && \
         cmake \
             -DCMAKE_C_COMPILER=/usr/bin/x86_64-alpine-linux-musl-gcc \
