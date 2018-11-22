@@ -4,6 +4,8 @@
 
 #include <unistd.h>
 #include <Poco/Format.h>
+#include <Poco/Path.h>
+#include <Poco/File.h>
 #include "Utils.h"
 
 namespace {
@@ -48,5 +50,13 @@ std::string Utils::formatSize(size_t size) {
     return formatFileSize(size / FORMAT_SIZE_KB, "K");
   } else {
     return Poco::format("%zB", size);
+  }
+}
+
+void Utils::makeParents(std::string const &filePath) {
+  Poco::Path path(filePath);
+  Poco::File parentDir(path.parent());
+  if (!parentDir.exists()) {
+    parentDir.createDirectories();
   }
 }

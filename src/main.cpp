@@ -1,3 +1,5 @@
+#include <utility>
+
 #include <memory>
 #include <iostream>
 #include <signal.h>
@@ -20,8 +22,8 @@
 #include "WebServerFactory.h"
 #include "IOController.h"
 #include "AutoFreePtr.h"
-#include "CallbackAPI.h"
 #include "GeneratedFilesWatcher.h"
+#include "PersistAndCallbackManager.h"
 
 using namespace Poco::Net;
 
@@ -65,23 +67,12 @@ namespace {
   // Global SIGINT and SIGTERM signal handler
   // ----------------------------------------
   volatile bool interrupted = false;
-  Poco::Mutex *signalMutex = nullptr;
-  Poco::Condition *signalCond = nullptr;
-
-  void signalHandler(int signal_value) {
-    switch (signal_value) {
-      case SIGINT:
-      case SIGTERM:
-        {
-          Poco::Mutex::ScopedLock scopedLock(*signalMutex);
-          interrupted = true;
-          signalCond->broadcast();
-        }
-        break;
-      default:
-        break;
-    }
-  }
+  struct SignalHandlerMutexAndCondition {
+    Poco::Mutex mutex;
+    Poco::Condition cond;
+  };
+  class ScopedSignalHandler;
+  std::vector<ScopedSignalHandler*> scopedSignalHandlers;
 
   /** Type of callback function on handling signal. */
   typedef std::function<void()> SignalCallbackType;
@@ -92,31 +83,20 @@ namespace {
   class ScopedSignalHandler {
   private:
     volatile bool _destroying = false;
-    Poco::Thread _waitSignalThread;
     SignalCallbackType _callback;
-
-    void _installSignalHandler() {
-      signalMutex = new Poco::Mutex();
-      signalCond = new Poco::Condition();
-
-      // install the signal handler
-      struct sigaction action;
-      action.sa_handler = signalHandler;
-      action.sa_flags = 0;
-      sigemptyset(&action.sa_mask);
-      sigaction(SIGINT, &action, NULL);
-      sigaction(SIGTERM, &action, NULL);
-    }
+    Poco::Mutex _mutex;
+    Poco::Condition _cond;
+    Poco::Thread _waitSignalThread;
 
   public:
     explicit ScopedSignalHandler(SignalCallbackType callback) : _callback(std::move(callback)) {
-      _installSignalHandler();
+      scopedSignalHandlers.push_back(this);
 
       // create a background waiting thread, which will call {@arg callback}
       // on the signal.
       _waitSignalThread.startFunc([this] {
-        Poco::Mutex::ScopedLock scopedLock(*signalMutex);
-        signalCond->wait(*signalMutex);
+        Poco::Mutex::ScopedLock scopedLock(_mutex);
+        _cond.wait(_mutex);
         if (!_destroying) {
           this->_callback();
         }
@@ -124,38 +104,55 @@ namespace {
     }
 
     void waitForTermination() {
-      Poco::Mutex::ScopedLock scopedLock(*signalMutex);
-      if (!interrupted) {
-        signalCond->wait(*signalMutex);
+      Poco::Mutex::ScopedLock scopedLock(_mutex);
+      if (!interrupted && !_destroying) {
+        _cond.wait(_mutex);
       }
     }
 
-    ~ScopedSignalHandler() {
-      // uninstall the signal handler
-      struct sigaction action;
-      action.sa_handler = SIG_DFL;
-      action.sa_flags = 0;
-      sigemptyset(&action.sa_mask);
-      sigaction(SIGINT, &action, NULL);
-      sigaction(SIGTERM, &action, NULL);
+    void notify() {
+      Poco::Mutex::ScopedLock scopedLock(_mutex);
+      _cond.broadcast();
+    }
 
+    ~ScopedSignalHandler() {
       // force all threads waiting on the signal to wake up
       {
-        Poco::Mutex::ScopedLock scopedLock(*signalMutex);
+        Poco::Mutex::ScopedLock scopedLock(_mutex);
         _destroying = true;
-        signalCond->broadcast();
+        _cond.broadcast();
       }
 
       // join on the background thread if it has started
       _waitSignalThread.join();
-
-      // now delete the signal facilities
-      delete signalMutex;
-      delete signalCond;
-      signalMutex = nullptr;
-      signalCond = nullptr;
     }
   };
+
+  void globalSignalHandler(int signal_value) {
+    switch (signal_value) {
+      case SIGINT:
+      case SIGTERM:
+        interrupted = true;
+        if (!scopedSignalHandlers.empty()) {
+          scopedSignalHandlers.back()->notify();
+        } else {
+          exit(0);
+        }
+        break;
+      default:
+        break;
+    }
+  }
+
+  void installGlobalSignalHandler() {
+    struct sigaction action;
+    action.sa_handler = globalSignalHandler;
+    action.sa_flags = 0;
+    sigemptyset(&action.sa_mask);
+    sigaction(SIGINT, &action, NULL);
+    sigaction(SIGTERM, &action, NULL);
+  }
+
 
   template <typename T>
   class AutoPtr {
@@ -177,10 +174,19 @@ protected:
     // Install the global error handler
     Poco::ErrorHandler::set(new ErrorHandler());
 
+    // Install the global signal handler
+    installGlobalSignalHandler();
+
     // Get the system shell configuration
     std::string shell = getenv("SHELL");
     if (shell.empty()) {
       shell = "sh";
+    }
+
+    // Ensure the status file not exist
+    if (!_statusFile.empty() && Poco::File(_statusFile).exists()) {
+      Logger::getLogger().error("The status file already exists: %s", _statusFile);
+      return Application::EXIT_SOFTWARE;
     }
 
     // Get the server hostname
@@ -201,8 +207,11 @@ protected:
     if (!_callbackToken.empty()) {
       logger.info("Callback Token: %s", _callbackToken);
     }
-    if (!_saveOutput.empty()) {
-      logger.info("Save output to: %s", _saveOutput);
+    if (!_outputFile.empty()) {
+      logger.info("Output file: %s", _outputFile);
+    }
+    if (!_statusFile.empty()) {
+      logger.info("Status file: %s", _statusFile);
     }
     if (!_runAfter.empty()) {
       logger.info("Run-after command: %s", _runAfter);
@@ -219,13 +228,13 @@ protected:
     }
 
     // Prepare for the working directory
-    Poco::File workDirFile(_workDir);
-    if (!workDirFile.isDirectory()) {
-      workDirFile.createDirectories();
+    Poco::File workDir(_workDir);
+    if (!workDir.exists()) {
+      workDir.createDirectories();
     }
 
     // Initialize all related objects.
-    CallbackAPI callbackAPI(_callbackAPI, _callbackToken);
+    PersistAndCallbackManager persistAndCallback(_statusFile, _callbackAPI, _callbackToken);
     ProgramExecutor executor(_args, _environ, _workDir);
     OutputBuffer outputBuffer(_bufferSize);
     IOController ioController(&executor, &outputBuffer);
@@ -242,37 +251,14 @@ protected:
     server.start();
     Logger::getLogger().info("HTTP server started at http://%s:%?u", hostName, server.socket().address().port());
 
-    // Notify the server that we've started the server, and is going to launch the user program.
-    if (!callbackAPI.uri().empty()) {
-      Poco::JSON::Object doc;
-      Poco::JSON::Object executorServerDoc;
-      executorServerDoc.set("hostname", hostName);
-      executorServerDoc.set("port", server.socket().address().port());
-      doc.set("eventType", "started");
-      doc.set("server", executorServerDoc);
-      callbackAPI.post(doc);
-    }
-
     // Run the main user program.
     {
-      std::map<std::string, std::string> postedGeneratedFiles;
       std::shared_ptr<GeneratedFilesWatcher> filesWatcher;
-      if (_watchGenerated && !callbackAPI.uri().empty()) {
+      if (_watchGenerated && persistAndCallback.enabled()) {
         filesWatcher = std::make_shared<GeneratedFilesWatcher>(
             _workDir,
-            [&callbackAPI, &postedGeneratedFiles] (std::string const& fileTag, Poco::JSON::Object const& jsonObject) {
-              std::ostringstream oss;
-              jsonObject.stringify(oss);
-              std::string jsonText = oss.str();
-              if (!postedGeneratedFiles.count(fileTag) || jsonText != postedGeneratedFiles[fileTag]) {
-                Logger::getLogger().info("Received new generated %s: %s", fileTag, jsonText);
-                Poco::JSON::Object doc;
-                doc.set("eventType", "generatedFile");
-                doc.set("fileTag", fileTag);
-                doc.set("fileData", jsonObject);
-                callbackAPI.post(doc);
-                postedGeneratedFiles[fileTag] = jsonText;
-              }
+            [&persistAndCallback] (std::string const& fileTag, Poco::JSON::Object const& jsonObject) {
+              persistAndCallback.fileGenerated(fileTag, jsonObject);
             });
         filesWatcher->start();
       }
@@ -280,6 +266,11 @@ protected:
         ExecutorScope mainExecutorScope(&executor);
         executor.start();
         ioController.start();
+
+        // Notify the server that we've started the program.
+        if (persistAndCallback.enabled()) {
+          persistAndCallback.programStarted(hostName, server.socket().address().port());
+        }
         {
           // This nested scope must exist, such that the child process will not install
           // this signal handler.
@@ -303,13 +294,13 @@ protected:
         outputBuffer.writtenBytes(), Utils::formatSize(outputBuffer.writtenBytes()));
 
     // Save the output if required
-    if (!_saveOutput.empty()) {
+    if (!_outputFile.empty()) {
       try {
         const size_t bufferSize = 8192;
         size_t begin = 0;
         ReadResult readResult;
         AutoFreePtr<char> buffer((char*)malloc(bufferSize));
-        Poco::FileStream outStream(_saveOutput, std::ios::out | std::ios::trunc);
+        Poco::FileStream outStream(_outputFile, std::ios::out | std::ios::trunc);
 
         if (outputBuffer.writtenBytes() > outputBuffer.size()) {
           size_t dSize = outputBuffer.writtenBytes() - outputBuffer.size();
@@ -328,36 +319,18 @@ protected:
 
         if (outputBuffer.writtenBytes() > outputBuffer.size()) {
           Logger::getLogger().info("The last %s output saved to: %s",
-              Utils::formatSize(outputBuffer.size()), _saveOutput);
+              Utils::formatSize(outputBuffer.size()), _outputFile);
         } else {
-          Logger::getLogger().info("All output saved to: %s", _saveOutput);
+          Logger::getLogger().info("All output saved to: %s", _outputFile);
         }
       } catch (Poco::Exception const& exc) {
-        Logger::getLogger().error("Failed to save the output to %s:\n%s", _saveOutput, exc.displayText());
+        Logger::getLogger().error("Failed to save the output to %s:\n%s", _outputFile, exc.displayText());
       }
     }
 
     // notify the callback API that the program has completed
-    if (!callbackAPI.uri().empty()) {
-      Poco::JSON::Object doc;
-      doc.set("eventType", "finished");
-      switch (executor.status()) {
-        case EXITED:
-          doc.set("status", "EXITED");
-          doc.set("exitCode", executor.exitCode());
-          break;
-        case SIGNALLED:
-          doc.set("status", "SIGNALLED");
-          doc.set("exitSignal", executor.exitSignal());
-          break;
-        case CANNOT_KILL:
-          doc.set("status", "CANNOT_KILL");
-          break;
-        default:
-          Logger::getLogger().warn("Invalid executor status after it is completed.");
-          break;
-      }
-      callbackAPI.post(doc);
+    if (persistAndCallback.enabled()) {
+      persistAndCallback.programFinished(executor);
     }
 
     // run command after execution
@@ -390,6 +363,23 @@ protected:
         runAfterExecutor.kill();
       });
       runAfterExecutor.wait();
+    }
+
+    // wait for the persist and callback manager to finish
+    if (persistAndCallback.enabled()) {
+      if (_noExit && !interrupted) {
+        ScopedSignalHandler scopedSignalHandler([&persistAndCallback] {
+          Logger::getLogger().info("Termination signal received, stop the persist and callback manager ...");
+          persistAndCallback.interrupt();
+        });
+        persistAndCallback.wait();
+      } else if (!interrupted) {
+        persistAndCallback.interrupt();
+        persistAndCallback.wait();
+      } else {
+        persistAndCallback.wait();
+      }
+      Logger::getLogger().info("PersistAndCallbackManager has stopped.");
     }
 
     // If no exit, wait for termination

@@ -11,6 +11,9 @@
 class Utils {
 public:
   static std::string formatSize(size_t size);
+
+  /** Make parent directories. */
+  static void makeParents(std::string const& filePath);
 };
 
 

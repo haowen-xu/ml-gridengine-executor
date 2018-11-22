@@ -209,24 +209,25 @@ void ProgramExecutor::kill() {
 
     // First step, attempt to kill by signal SIGINT
     _killIfRunning(SIGINT);
-    if (!wait(10 * 1000)) {
+    if (!wait(ML_GRIDENGINE_KILL_PROGRAM_FIRST_WAIT_SECONDS * 1000)) {
       // Second step, attempt to kill by signal SIGINT.
       //
       // Some applications may listen to a double CTRL+C signal, in which the first
       // Ctrl+C tells the application to exit cleanly, while the second Ctrl+C tells
       // the application to exit immediately.  We thus attempt to emit this second
       // Ctrl+C signal here.
-      Logger::getLogger().warn("%s does not exit after received Ctrl+C for 10 seconds, "
-                               "send Ctrl+C again.", _loggingTag);
+      Logger::getLogger().warn("%s does not exit after received Ctrl+C for %d seconds, "
+                               "send Ctrl+C again.", _loggingTag, ML_GRIDENGINE_KILL_PROGRAM_FIRST_WAIT_SECONDS);
       _killIfRunning(SIGINT);
 
-      if (!wait(20 * 1000)) {
-        Logger::getLogger().warn("%s does not exit after received double Ctrl+C for 20 seconds, "
-                                 "now ready to kill it.", _loggingTag);
+      if (!wait(ML_GRIDENGINE_KILL_PROGRAM_SECOND_WAIT_SECONDS * 1000)) {
+        Logger::getLogger().warn("%s does not exit after received double Ctrl+C for %d seconds, "
+                                 "now ready to kill it.", _loggingTag, ML_GRIDENGINE_KILL_PROGRAM_SECOND_WAIT_SECONDS);
         _killIfRunning(SIGKILL);
 
-        if (!wait(60 * 1000)) {
-          Logger::getLogger().warn("%s does not exit after being killed for 60 seconds, now give up.", _loggingTag);
+        if (!wait(ML_GRIDENGINE_KILL_PROGRAM_FINAL_WAIT_SECONDS * 1000)) {
+          Logger::getLogger().warn("%s does not exit after being killed for %d seconds, now give up.", _loggingTag,
+                                   ML_GRIDENGINE_KILL_PROGRAM_FINAL_WAIT_SECONDS);
           Poco::Mutex::ScopedLock scopedLock2(*_waitMutex);
           _status = CANNOT_KILL;
           close(_pipeFd);  // force closing the pipe, in order for the IO controller to stop
