@@ -10,4 +10,4 @@ env:
 script:
   - bash scripts/build.sh
   - bash scripts/run-tests.sh
-  - [[ $TRAVIS_BRANCH == 'master' ]] && bash scripts/push-release.sh
+  - bash -c '[[ $TRAVIS_BRANCH == 'master' ]] && bash scripts/push-release.sh'
