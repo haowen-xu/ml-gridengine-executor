@@ -2,6 +2,7 @@
 // Created by 许昊文 on 2018/11/22.
 //
 
+#include <typeinfo>
 #include "HTTPError.h"
 
 
