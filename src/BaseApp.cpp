@@ -116,11 +116,21 @@ void BaseApp::defineOptions(OptionSet &options) {
           .callback(OptionCallback<BaseApp>(this, &BaseApp::handleSetCallbackToken)));
 
   options.addOption(
-      Option().fullName("save-output")
-          .description("Save program output to this path.")
+      Option().fullName("output-file")
+          .description("Save program output to this file.")
           .argument("PATH")
           .required(false)
-          .callback(OptionCallback<BaseApp>(this, &BaseApp::handleSetSaveOutput))
+          .callback(OptionCallback<BaseApp>(this, &BaseApp::handleSetOutputFile))
+          .validator(new RegExpValidator("^.+$")));
+
+  options.addOption(
+      Option().fullName("status-file")
+          .description("Save executor status to this file. "
+                       "If the status file exists, the executor will exit immediately, so as to "
+                       "avoid being executed for multiple times on a single task.")
+          .argument("PATH")
+          .required(false)
+          .callback(OptionCallback<BaseApp>(this, &BaseApp::handleSetStatusFile))
           .validator(new RegExpValidator("^.+$")));
 
   options.addOption(
@@ -194,8 +204,12 @@ void BaseApp::handleSetCallbackToken(const std::string &name, const std::string 
   _callbackToken = value;
 }
 
-void BaseApp::handleSetSaveOutput(const std::string &name, const std::string &value) {
-  _saveOutput = value;
+void BaseApp::handleSetOutputFile(const std::string &name, const std::string &value) {
+  _outputFile = value;
+}
+
+void BaseApp::handleSetStatusFile(const std::string &name, const std::string &value) {
+  _statusFile = value;
 }
 
 void BaseApp::handleSetRunAfter(const std::string &name, const std::string &value) {

@@ -39,11 +39,12 @@ add_library(
         src/Utils.h
         src/IOController.cpp
         src/IOController.h
-        src/CallbackAPI.cpp
-        src/CallbackAPI.h
         src/GeneratedFilesWatcher.cpp
         src/GeneratedFilesWatcher.h
-)
+        src/PersistAndCallbackManager.cpp
+        src/PersistAndCallbackManager.h
+        src/HTTPError.cpp
+        src/HTTPError.h)
 
 # the main executable program
 add_executable(ml-gridengine-executor src/main.cpp)

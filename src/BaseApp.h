@@ -7,6 +7,7 @@
 
 #include <string>
 #include <Poco/Util/Application.h>
+#include "macros.h"
 #include "ProgramExecutor.h"
 
 class BaseApp : public Poco::Util::Application {
@@ -19,10 +20,11 @@ protected:
   bool _watchGenerated = false;
   std::string _serverHost;
   Poco::UInt16 _serverPort = 0;
-  size_t _bufferSize = 4 * 1024UL * 1024UL;
+  size_t _bufferSize = ML_GRIDENGINE_DEFAULT_BUFFER_SIZE;
   std::string _callbackAPI;
   std::string _callbackToken;
-  std::string _saveOutput;
+  std::string _outputFile;
+  std::string _statusFile;
   std::string _runAfter;
 
   void displayHelp(std::ostream& out);
@@ -51,7 +53,9 @@ protected:
 
   void handleSetCallbackToken(const std::string &name, const std::string &value);
 
-  void handleSetSaveOutput(const std::string &name, const std::string &value);
+  void handleSetOutputFile(const std::string &name, const std::string &value);
+
+  void handleSetStatusFile(const std::string &name, const std::string &value);
 
   void handleSetRunAfter(const std::string &name, const std::string &value);
 
