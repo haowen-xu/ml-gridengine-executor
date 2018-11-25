@@ -27,13 +27,14 @@ def yield_content(response, buffer_size=8192):
 
 
 @click.command()
+@click.option('--timeout', type=click.INT, help='Timeout argument for streaming output.', required=True, default=60)
 @click.argument('server-uri')
-def main(server_uri):
+def main(timeout, server_uri):
     stream_uri = server_uri.rstrip('/') + '/output/_stream'
     begin = 0
     closed = False
     while not closed:
-        r = requests.get('{}?begin={}'.format(stream_uri, begin), stream=True)
+        r = requests.get('{}?begin={}&timeout={}'.format(stream_uri, begin, timeout), stream=True)
         if r.status_code == 410:
             closed = True
         elif r.status_code == 200:

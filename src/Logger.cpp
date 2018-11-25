@@ -6,12 +6,16 @@
 #include <Poco/Mutex.h>
 #include "Logger.h"
 
-namespace {
-  Logger rootLogger;
-}
+Logger* Logger::_rootLogger = new Logger();
 
 Logger &Logger::getLogger() {
-  return rootLogger;
+  return *_rootLogger;
+}
+
+Logger* Logger::setRootLogger(Logger *rootLogger) {
+  Logger* currentLogger = _rootLogger;
+  _rootLogger = rootLogger;
+  return currentLogger;
 }
 
 Logger& Logger::log(std::string const &level, std::string const &message) {
@@ -26,4 +30,14 @@ Logger::Logger(): _mutex(new Poco::Mutex()) {
 
 Logger::~Logger() {
   delete _mutex;
+}
+
+Logger::ScopedRootLogger::ScopedRootLogger(Logger *rootLogger) :
+  _rootLogger(rootLogger)
+{
+  _originalLogger = setRootLogger(_rootLogger);
+}
+
+Logger::ScopedRootLogger::~ScopedRootLogger() {
+  setRootLogger(_originalLogger);
 }

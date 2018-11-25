@@ -60,5 +60,5 @@ add_executable(
         tests/unit-tests/main.cpp
         tests/unit-tests/Utils.test.cpp
         tests/unit-tests/macros.h
-        tests/unit-tests/OutputBuffer.test.cpp)
+        tests/unit-tests/OutputBuffer.test.cpp tests/unit-tests/CapturingLogger.cpp tests/unit-tests/CapturingLogger.h)
 target_link_libraries(ml-gridengine-executor-unit-tests ml-gridengine-executor-sources "${POCO_LIBS}" "${POCO_DEP_LIBS}")

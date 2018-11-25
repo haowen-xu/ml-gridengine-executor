@@ -14,14 +14,37 @@ namespace Poco {
 
 class Logger {
 private:
+  static Logger* _rootLogger;
   Poco::Mutex *_mutex;
 
 public:
+  class ScopedRootLogger {
+  private:
+    Logger* _rootLogger;
+    Logger* _originalLogger;
+
+  public:
+    explicit ScopedRootLogger(Logger* rootLogger);
+
+    ~ScopedRootLogger();
+
+    inline Logger& rootLogger() const { return *_rootLogger; }
+  };
+
   explicit Logger();
-  ~Logger();
+  virtual ~Logger();
 
   /** Get the root logger. */
   static Logger& getLogger();
+
+  /**
+   * Replace the default root logger with given logger.
+   *
+   * @param rootLogger The logger used to replace the default root logger.
+   *                   If NULL, will reset to the default logger.
+   * @return The current root logger.
+   */
+  static Logger* setRootLogger(Logger *rootLogger);
 
   /**
    * Log a message.
@@ -31,7 +54,7 @@ public:
    *
    * @return The logger instance itself.
    */
-  Logger& log(std::string const& level, std::string const& message);
+  virtual Logger& log(std::string const& level, std::string const& message);
 
   // ---- logging methods of INFO level ----
   inline Logger& info(std::string const& message) {

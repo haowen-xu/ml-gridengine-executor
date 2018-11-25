@@ -9,9 +9,11 @@
 #include <Poco/Thread.h>
 #include <boost/heap/pairing_heap.hpp>
 #include <catch2/catch.hpp>
+#include <src/Logger.h>
 #include "src/OutputBuffer.h"
 #include "src/Utils.h"
 #include "macros.h"
+#include "CapturingLogger.h"
 
 namespace {
   std::vector<Byte> bytesRange(Byte start, size_t n) {
@@ -315,5 +317,62 @@ TEST_CASE("Random test on read and write", "[OutputBuffer]") {
   }
   delete [] results;
   delete [] configs;
+  delete [] threads;
+}
+
+TEST_CASE("Test re-allocate reader list", "[OutputBuffer]") {
+  CapturingLogger capturingLogger;
+  Logger::ScopedRootLogger scopedRootLogger(&capturingLogger);
+  static const int N_THREADS = 1002;
+  static const int SPECIAL_INDEX = 500;
+
+  OutputBuffer buffer(1);
+  auto *threads = new Poco::Thread[N_THREADS];
+  auto *targets = new char*[N_THREADS];
+  auto *results = new ReadResult[N_THREADS];
+  for (int i=0; i<N_THREADS; ++i) {
+    targets[i] = (char*)malloc(1);
+  }
+
+  for (int i=0; i<N_THREADS; ++i) {
+    if (i != SPECIAL_INDEX) {
+      threads[i].startFunc([i, &buffer, &targets, &results]() {
+        results[i] = buffer.read(0, targets[i], 1, 100);
+      });
+    } else {
+      threads[i].startFunc([i, &buffer, &targets, &results] () {
+        results[i] = buffer.read(0, targets[i], 1);
+      });
+    }
+  }
+
+  usleep(500 * 1000);
+  buffer.write(bytesRange(123, 1).data(), 1);
+  buffer.close();
+
+  for (int i=0; i<1002; ++i) {
+    threads[i].join();
+  }
+  REQUIRE_EQUALS(capturingLogger.capturedLogs().size(), 1);
+  REQUIRE_EQUALS(capturingLogger.capturedLogs().at(0),
+      CapturedLog("INFO", "Waiting queue for output buffer readers has been re-allocated."));
+
+  for (int i=0; i<1002; ++i) {
+    if (i != 500) {
+      REQUIRE_FALSE(results[i].isClosed);
+      REQUIRE(results[i].isTimeout);
+    } else {
+      REQUIRE_FALSE(results[i].isClosed);
+      REQUIRE_FALSE(results[i].isTimeout);
+      REQUIRE_EQUALS(results[i].count, 1);
+      REQUIRE_EQUALS(targets[i][0], 123);
+    }
+  }
+
+  for (int i=0; i<1002; ++i) {
+    free(targets[i]);
+  }
+  delete [] results;
+  delete [] targets;
   delete [] threads;
 }

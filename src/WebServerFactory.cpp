@@ -55,7 +55,8 @@ namespace {
   public:
     virtual void handleRequest(HTTPServerRequest& request, HTTPServerResponse& response) {
       ssize_t begin = 0;
-      int timeout = (int)(ML_GRIDENGINE_CLIENT_READ_TIMEOUT_SECONDS * 1000);
+      long maxTimeout = (long)(ML_GRIDENGINE_CLIENT_READ_TIMEOUT_SECONDS * 1000L);
+      long timeout = maxTimeout;
 
       for (auto const& it: _uri.getQueryParameters()) {
         if (it.first == "begin") {
@@ -64,19 +65,20 @@ namespace {
             return;
           }
           begin = beginValue;
+        } else if (it.first == "timeout") {
+          Poco::UInt32 timeoutValue;
+          if (!_tryParseQuery(response, Poco::NumberParser::tryParseUnsigned, it.second, &timeoutValue)) {
+            return;
+          }
+          timeout = std::min(timeoutValue * 1000L, maxTimeout);
         }
       }
 
       AutoFreePtr<char> buffer((char*)malloc(_requestBufferSize));
       ReadResult result;
 
-      // Get the first read result
-      result = _outputBuffer->read(begin, buffer.ptr, _requestBufferSize, timeout);
-      while (result.isTimeout) {
-        result = _outputBuffer->read(begin, buffer.ptr, _requestBufferSize, timeout);
-      }
-
       // If the buffer has closed, stop the connection immediately.
+      result = _outputBuffer->read(begin, buffer.ptr, _requestBufferSize, timeout);
       if (result.isClosed) {
         response.setStatus(HTTPResponse::HTTPStatus::HTTP_GONE);
         response.send() << "<h1>Program exited.</h1>" << std::endl;
@@ -89,6 +91,9 @@ namespace {
       auto &r = response.send();
 
       // Send the first chunk (with header).
+      while (result.isTimeout && request.stream().good()) {
+        result = _outputBuffer->read(begin, buffer.ptr, _requestBufferSize, timeout);
+      }
       std::string beginStr = Poco::format("%?x\n", result.begin);
       r.write(beginStr.c_str(), beginStr.length());
       r.write(buffer.ptr, result.count);
