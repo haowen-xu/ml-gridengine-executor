@@ -69,10 +69,10 @@ class SimpleTaskTestCase(TestCase):
             proc = start_executor(['bash', '-c', 'sleep 3'], status_file=status_file)
             try:
                 time.sleep(1.5)
-                status = json.loads(file_content(status_file))
+                status = json.loads(file_content(status_file, binary=False))
                 self.assertEqual(status['status'], 'RUNNING')
                 proc.wait()
-                status = json.loads(file_content(status_file))
+                status = json.loads(file_content(status_file, binary=False))
                 self.assertEqual(status['status'], 'EXITED')
                 self.assertEqual(status['exitCode'], 0)
             finally:
