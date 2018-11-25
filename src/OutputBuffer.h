@@ -5,7 +5,8 @@
 #ifndef ML_GRIDENGINE_EXECUTOR_OUTPUTBUFFER_H
 #define ML_GRIDENGINE_EXECUTOR_OUTPUTBUFFER_H
 
-#include <cstddef>
+#include <stddef.h>
+#include <sys/types.h>
 
 typedef unsigned char Byte;
 
@@ -17,17 +18,25 @@ namespace Poco {
 struct ReadResult {
   /** Whether or not the buffer has closed. */
   bool isClosed;
+  /** Whether or not the read request is timeout. */
+  bool isTimeout;
   /** Actual beginning of the contents read from the buffer. */
   size_t begin;
   /** Actual count of the contents read from the buffer. */
   size_t count;
 
-  ReadResult() : isClosed(false), begin(0), count(0) {}
-  ReadResult(size_t begin, size_t count) : isClosed(false), begin(begin), count(count) {}
+  ReadResult() : ReadResult(0, 0) {}
+  ReadResult(size_t begin, size_t count) : isClosed(false), isTimeout(false), begin(begin), count(count) {}
 
   static ReadResult Closed() {
     ReadResult r;
     r.isClosed = true;
+    return r;
+  }
+
+  static ReadResult Timeout() {
+    ReadResult r;
+    r.isTimeout = true;
     return r;
   }
 };
@@ -56,7 +65,7 @@ private:
   ReaderList *_readerList;
 
   /** Expand the buffer capacity, keeping all contents. */
-  void _expandBuffer();
+  void _expandBuffer(size_t desiredCapacity);
 
   /**
    * Write a number of bytes into the circular buffer.
@@ -90,11 +99,23 @@ private:
    */
   size_t _circularRead(Byte* target, size_t count, size_t start);
 
-  bool _tryRead(size_t begin, void *target, size_t count, ReadResult *result);
+  /** Translate a negatively indexed "begin" to its current positive index. */
+  inline size_t translateNegativeBegin(ssize_t begin) const {
+    if (begin < 0) {
+      begin += _writtenBytes;
+    }
+    if (begin < 0) {
+      begin = 0;
+    }
+    return (size_t)begin;
+  }
+
+  ReadResult _tryRead(size_t begin, void *target, size_t count);
 
 public:
   inline size_t size() const { return _size; }
-  inline size_t capacity() const { return _capacity; }
+  /** Maximum number of bytes which can be stored in this buffer. */
+  inline size_t capacity() const { return _maxCapacity; }
   inline size_t writtenBytes() const { return _writtenBytes; }
 
   /**
@@ -125,26 +146,27 @@ public:
    * Read at most {@arg count} number of bytes from the output buffer.
    *
    * @param begin Beginning position of the output to read, counted from the very beginning when the program started.
+   *              If negative, it will be first added by {@code writtenBytes()}, then used as the position.
    * @param target Target array, where to put the contents.
    * @param count Maximum number of bytes to read.
    * @param timeout Number of milliseconds to wait before timeout.  Specify <= 0 to wait forever.
    *
    * @return The result of the read request.
-   * @throws Poco::TimeoutException If the read request timeout.
    */
-  ReadResult read(size_t begin, void *target, size_t count, long timeout = 0);
+  ReadResult read(ssize_t begin, void *target, size_t count, long timeout = 0);
 
   /**
    * Try read at most {@arg count} number of bytes from the output buffer.
    *
    * @param begin Beginning position of the output to read, counted from the very beginning when the program started.
+   *              If negative, it will be first added by {@code writtenBytes()}, then used as the position.
    * @param target Target array, where to put the contents.
    * @param count Maximum number of bytes to read.
-   * @param timeout Number of milliseconds to wait before timeout.  Specify <= 0 to wait forever.
    *
-   * @return Whether or not the read request is finished.
+   * @return The result of the read request.  If there's no more content in the buffer currently,
+   *         returns {@code ReadResult::Timeout()}.
    */
-  bool tryRead(size_t begin, void* target, size_t count, ReadResult *result);
+  ReadResult tryRead(ssize_t begin, void* target, size_t count);
 
   /**
    * Close the output buffer.

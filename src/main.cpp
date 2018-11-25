@@ -1,5 +1,3 @@
-#include <utility>
-
 #include <memory>
 #include <iostream>
 #include <signal.h>
@@ -24,6 +22,7 @@
 #include "AutoFreePtr.h"
 #include "GeneratedFilesWatcher.h"
 #include "PersistAndCallbackManager.h"
+#include "SignalHandler.h"
 
 using namespace Poco::Net;
 
@@ -62,109 +61,6 @@ namespace {
     explicit ExecutorScope(ProgramExecutor *executor) : _executor(executor) {}
     ~ExecutorScope() { _executor->kill(); }
   };
-
-  // ----------------------------------------
-  // Global SIGINT and SIGTERM signal handler
-  // ----------------------------------------
-  volatile bool interrupted = false;
-  struct SignalHandlerMutexAndCondition {
-    Poco::Mutex mutex;
-    Poco::Condition cond;
-  };
-  class ScopedSignalHandler;
-  std::vector<ScopedSignalHandler*> scopedSignalHandlers;
-
-  /** Type of callback function on handling signal. */
-  typedef std::function<void()> SignalCallbackType;
-
-  /**
-   * The scoped signal handling manager.
-   */
-  class ScopedSignalHandler {
-  private:
-    volatile bool _destroying = false;
-    SignalCallbackType _callback;
-    Poco::Mutex _mutex;
-    Poco::Condition _cond;
-    Poco::Thread _waitSignalThread;
-
-  public:
-    explicit ScopedSignalHandler(SignalCallbackType callback) : _callback(std::move(callback)) {
-      scopedSignalHandlers.push_back(this);
-
-      // create a background waiting thread, which will call {@arg callback}
-      // on the signal.
-      _waitSignalThread.startFunc([this] {
-        Poco::Mutex::ScopedLock scopedLock(_mutex);
-        _cond.wait(_mutex);
-        if (!_destroying) {
-          this->_callback();
-        }
-      });
-    }
-
-    void waitForTermination() {
-      Poco::Mutex::ScopedLock scopedLock(_mutex);
-      if (!interrupted && !_destroying) {
-        _cond.wait(_mutex);
-      }
-    }
-
-    void notify() {
-      Poco::Mutex::ScopedLock scopedLock(_mutex);
-      _cond.broadcast();
-    }
-
-    ~ScopedSignalHandler() {
-      // force all threads waiting on the signal to wake up
-      {
-        Poco::Mutex::ScopedLock scopedLock(_mutex);
-        _destroying = true;
-        _cond.broadcast();
-      }
-
-      // join on the background thread if it has started
-      _waitSignalThread.join();
-    }
-  };
-
-  void globalSignalHandler(int signal_value) {
-    switch (signal_value) {
-      case SIGINT:
-      case SIGTERM:
-        interrupted = true;
-        if (!scopedSignalHandlers.empty()) {
-          scopedSignalHandlers.back()->notify();
-        } else {
-          exit(0);
-        }
-        break;
-      default:
-        break;
-    }
-  }
-
-  void installGlobalSignalHandler() {
-    struct sigaction action;
-    action.sa_handler = globalSignalHandler;
-    action.sa_flags = 0;
-    sigemptyset(&action.sa_mask);
-    sigaction(SIGINT, &action, NULL);
-    sigaction(SIGTERM, &action, NULL);
-  }
-
-
-  template <typename T>
-  class AutoPtr {
-    T* _ptr;
-
-  public:
-    explicit AutoPtr(T *ptr) : _ptr(ptr) {}
-    ~AutoPtr() { delete _ptr; _ptr = nullptr; }
-
-    T& operator*() { return *_ptr; }
-    T* operator->() { return _ptr; }
-  };
 }
 
 
@@ -173,9 +69,6 @@ protected:
   int runApp() override {
     // Install the global error handler
     Poco::ErrorHandler::set(new ErrorHandler());
-
-    // Install the global signal handler
-    installGlobalSignalHandler();
 
     // Get the system shell configuration
     std::string shell = getenv("SHELL");
@@ -274,7 +167,7 @@ protected:
         {
           // This nested scope must exist, such that the child process will not install
           // this signal handler.
-          ScopedSignalHandler scopedSignalHandler([&executor] {
+          SignalHandler signalHandler([&executor] {
             Logger::getLogger().info("Termination signal received, kill the user program ...");
             executor.kill();
           });
@@ -334,7 +227,7 @@ protected:
     }
 
     // run command after execution
-    if (!_runAfter.empty() && !interrupted) {
+    if (!_runAfter.empty() && !SignalHandler::interrupted()) {
       // prepare for the command
       ArgList runAfterArgs = {shell, "-c", _runAfter};
       EnvironMap environ(_environ);
@@ -358,7 +251,7 @@ protected:
       // run the command
       ProgramExecutor runAfterExecutor(runAfterArgs, environ, std::string(), false, "Run-after command");
       runAfterExecutor.start();
-      ScopedSignalHandler scopedSignalHandler([&runAfterExecutor] {
+      SignalHandler signalHandler([&runAfterExecutor] {
         Logger::getLogger().info("Termination signal received, kill \"run after\" command.");
         runAfterExecutor.kill();
       });
@@ -367,27 +260,28 @@ protected:
 
     // wait for the persist and callback manager to finish
     if (persistAndCallback.enabled()) {
-      if (_noExit && !interrupted) {
-        ScopedSignalHandler scopedSignalHandler([&persistAndCallback] {
+      // Interrupt the persistAndCallbackManager if interrupted
+      if (SignalHandler::interrupted()) {
+        persistAndCallback.interrupt();
+      }
+
+      // Now wait for the persistAndCallbackManager to exit.
+      {
+        SignalHandler signalHandler([&persistAndCallback] {
           Logger::getLogger().info("Termination signal received, stop the persist and callback manager ...");
           persistAndCallback.interrupt();
         });
-        persistAndCallback.wait();
-      } else if (!interrupted) {
-        persistAndCallback.interrupt();
-        persistAndCallback.wait();
-      } else {
         persistAndCallback.wait();
       }
       Logger::getLogger().info("PersistAndCallbackManager has stopped.");
     }
 
     // If no exit, wait for termination
-    if (_noExit && !interrupted) {
-      ScopedSignalHandler scopedSignalHandler([] {
+    if (_noExit && !SignalHandler::interrupted()) {
+      SignalHandler signalHandler([] {
         Logger::getLogger().info("Termination signal received.");
       });
-      scopedSignalHandler.waitForTermination();
+      signalHandler.wait();
     }
 
     // Stop the server

@@ -7,6 +7,7 @@
 #include <cassert>
 #include <cstdlib>
 #include <queue>
+#include <boost/heap/pairing_heap.hpp>
 #include <Poco/Condition.h>
 #include <Poco/Mutex.h>
 #include "AutoFreePtr.h"
@@ -24,9 +25,7 @@ namespace {
     bool cancelled;
 
     ReadRequest(size_t begin, Byte* target, size_t count):
-      cond(), result(), begin(begin), target(target), count(count), cancelled(false)
-    {
-    }
+      cond(), result(), begin(begin), target(target), count(count), cancelled(false) {}
 
     void cancel() {
       cancelled = true;
@@ -40,10 +39,78 @@ namespace {
       return left->begin > right->begin;
     }
   };
+
+  template <typename T>
+  struct AutoDelete {
+    T* ptr;
+    AutoDelete(T* ptr) : ptr(ptr) {}
+    ~AutoDelete() { delete ptr; }
+    void swap(T** dst) {
+      T* tmp = *dst;
+      *dst = ptr;
+      ptr = tmp;
+    }
+  };
 }
 
-class OutputBuffer::ReaderList :
-  public std::priority_queue<ReadRequestPtr, std::vector<ReadRequestPtr>, ReaderOrdering> {
+class OutputBuffer::ReaderList {
+  typedef boost::heap::pairing_heap<ReadRequestPtr, boost::heap::compare<ReaderOrdering>> HeapType;
+
+private:
+  HeapType *_heap;
+  size_t _heapSize;
+  size_t _activeCount;
+
+public:
+  ReaderList() : _heap(new HeapType), _heapSize(0), _activeCount(0) {}
+
+  ~ReaderList() { delete _heap; }
+
+  void add(ReadRequestPtr const& ptr) {
+    _heap->push(ptr);
+    ++_heapSize;
+    ++_activeCount;
+  }
+
+  void cancel(ReadRequestPtr const& ptr) {
+    --_activeCount;
+    ptr->cancel();
+    if (_activeCount * 8 < _heapSize) {
+      AutoDelete<HeapType> newHeap(new HeapType);
+      for (auto const &itm: *_heap) {
+        if (!itm->cancelled) {
+          newHeap.ptr->push(itm);
+        }
+      }
+      newHeap.swap(&_heap);
+      _heapSize = _activeCount;
+      Logger::getLogger().info("Waiting queue for output buffer readers has been re-allocated.");
+    }
+  }
+
+  void close() {
+    while (!_heap->empty()) {
+      ReadRequestPtr const& itm = _heap->top();
+      itm->result = ReadResult::Closed();
+      itm->cond.signal();
+      _heap->pop();
+    }
+    _heapSize = _activeCount = 0;
+  }
+
+  template <typename Function>
+  void process(size_t writtenBytes, Function const& f) {
+    while (!_heap->empty() && _heap->top()->begin < writtenBytes) {
+      ReadRequestPtr const& reader = _heap->top();
+      if (!reader->cancelled) {
+        f(reader);
+        reader->cond.signal();
+        --_activeCount;
+      }
+      _heap->pop();
+      --_heapSize;
+    }
+  }
 };
 
 OutputBuffer::OutputBuffer(size_t maxCapacity, size_t initialCapacity) :
@@ -72,8 +139,8 @@ OutputBuffer::~OutputBuffer() {
   _buffer = nullptr;
 }
 
-void OutputBuffer::_expandBuffer() {
-  size_t newCapacity = std::min(_capacity << 1, _maxCapacity);
+void OutputBuffer::_expandBuffer(size_t desiredCapacity) {
+  size_t newCapacity = std::min(std::max(_capacity << 1, desiredCapacity), _maxCapacity);
   if (newCapacity > _capacity) {
     AutoFreePtr<Byte> autoFree((Byte*)malloc(newCapacity));
     if (_head + _size > _capacity) {
@@ -107,8 +174,9 @@ size_t OutputBuffer::_circularWrite(const Byte *data, size_t count) {
 }
 
 size_t OutputBuffer::_overwrite(const Byte *data, size_t count) {
-  if (_size + count > _capacity && _capacity < _maxCapacity) {
-    _expandBuffer();
+  size_t desiredCapacity = _size + count;
+  if (desiredCapacity > _capacity && _capacity < _maxCapacity) {
+    _expandBuffer(desiredCapacity);
   }
 
   size_t overwrittenLen = 0;
@@ -169,35 +237,49 @@ void OutputBuffer::write(const void *data, size_t count) {
   _overwrite((Byte*)data, count);
 
   // wake up all waiting readers
-  while (!_readerList->empty() && _readerList->top()->begin < _writtenBytes) {
-    ReadRequestPtr const& reader = _readerList->top();
-    if (!reader->cancelled) {
-      assert(reader->begin >= oldWrittenBytes);
-      size_t itmCount = std::min(count, _writtenBytes - reader->begin);
-      reader->result = ReadResult(reader->begin, itmCount);
-      memcpy(reader->target, (Byte*)data + (reader->begin - oldWrittenBytes), itmCount);
-      reader->cond.signal();
-    }
-    _readerList->pop();
+  _readerList->process(_writtenBytes, [&] (ReadRequestPtr const& reader) {
+    assert(reader->begin >= oldWrittenBytes);
+    size_t itmCount = std::min(reader->count, _writtenBytes - reader->begin);
+    reader->result = ReadResult(reader->begin, itmCount);
+    memcpy(reader->target, (Byte*)data + (reader->begin - oldWrittenBytes), itmCount);
+  });
+}
+
+ReadResult OutputBuffer::_tryRead(size_t begin, void *target, size_t count) {
+  if (begin < _writtenBytes) {
+    // if begin < writtenBytes, return the available bytes immediately
+    size_t minBegin = _writtenBytes - _size;
+    size_t localStart = (begin <= minBegin) ? 0 : begin - minBegin;
+    return ReadResult(_writtenBytes - _size + localStart, _circularRead((Byte*)target, count, localStart));
+  } else if (_closed) {
+    // if begin >= writtenBytes but the buffer has closed, return Closed result immediately
+    return ReadResult::Closed();
+  } else {
+    // cannot get the result currently
+    return ReadResult::Timeout();
   }
 }
 
-ReadResult OutputBuffer::read(size_t begin, void *target, size_t count, long timeout) {
+ReadResult OutputBuffer::read(ssize_t begin, void *target, size_t count, long timeout) {
   Poco::Mutex::ScopedLock scopedLock(*_mutex);
-  ReadResult result;
+  size_t positiveBegin = translateNegativeBegin(begin);
+  ReadResult result = _tryRead(positiveBegin, target, count);
 
-  if (_tryRead(begin, target, count, &result)) {
+  if (!result.isTimeout) {
     return result;
   } else {
-    std::shared_ptr<ReadRequest> reader(new ReadRequest(begin, (Byte *) target, count));
-    _readerList->push(reader);
+    std::shared_ptr<ReadRequest> reader(new ReadRequest(positiveBegin, (Byte *) target, count));
+    _readerList->add(reader);
     if (timeout <= 0) {
       reader->cond.wait(*_mutex);
     } else {
       try {
         reader->cond.wait(*_mutex, timeout);
+      } catch (Poco::TimeoutException const&) {
+        _readerList->cancel(reader);
+        return ReadResult::Timeout();
       } catch (...) {
-        reader->cancel();
+        _readerList->cancel(reader);
         throw;
       }
     }
@@ -205,40 +287,16 @@ ReadResult OutputBuffer::read(size_t begin, void *target, size_t count, long tim
   }
 }
 
-bool OutputBuffer::_tryRead(size_t begin, void *target, size_t count, ReadResult *result) {
-  if (begin < _writtenBytes) {
-    // if begin < writtenBytes, return the available bytes immediately
-    size_t minBegin = _writtenBytes - _size;
-    size_t localStart = (begin <= minBegin) ? 0 : begin - minBegin;
-    *result = ReadResult(_writtenBytes - _size + localStart, _circularRead((Byte*)target, count, localStart));
-    return true;
-  } else if (_closed) {
-    // if begin >= writtenBytes but the buffer has closed, return Closed result immediately
-    *result = ReadResult::Closed();
-    return true;
-  } else {
-    // cannot get the result
-    return false;
-  }
-}
-
-bool OutputBuffer::tryRead(size_t begin, void *target, size_t count, ReadResult *result) {
+ReadResult OutputBuffer::tryRead(ssize_t begin, void *target, size_t count) {
   Poco::Mutex::ScopedLock scopedLock(*_mutex);
-  return _tryRead(begin, target, count, result);
+  return _tryRead(translateNegativeBegin(begin), target, count);
 }
 
 void OutputBuffer::close() {
   Poco::Mutex::ScopedLock scopedLock(*_mutex);
 
   if (!_closed) {
-    while (!_readerList->empty()) {
-      ReadRequestPtr const& itm = _readerList->top();
-      if (!itm->cancelled) {
-        itm->result = ReadResult::Closed();
-        itm->cond.signal();
-      }
-      _readerList->pop();
-    }
+    _readerList->close();
     _closed = true;
   }
 }

@@ -8,6 +8,7 @@
 #include <Poco/Net/HTTPServerResponse.h>
 #include <Poco/Net/HTTPRequestHandler.h>
 #include <Poco/NumberParser.h>
+#include "macros.h"
 #include "AutoFreePtr.h"
 #include "WebServerFactory.h"
 #include "Logger.h"
@@ -40,16 +41,26 @@ namespace {
   class OutputStreamHandler : public HTTPRequestHandler {
     HANDLER_CONSTRUCTOR(OutputStreamHandler) {}
   private:
+    template <typename Function, typename T>
+    bool _tryParseQuery(HTTPServerResponse& response, Function const& f, std::string const& s, T *dst) {
+      if (!f(s, *dst, ',')) {
+        response.setStatus(HTTPResponse::HTTPStatus::HTTP_BAD_REQUEST);
+        response.send() << "<h1>Bad Request</h1>" << std::endl;
+        return false;
+      } else {
+        return true;
+      }
+    }
 
   public:
     virtual void handleRequest(HTTPServerRequest& request, HTTPServerResponse& response) {
-      size_t begin = 0;
+      ssize_t begin = 0;
+      int timeout = (int)(ML_GRIDENGINE_CLIENT_READ_TIMEOUT_SECONDS * 1000);
+
       for (auto const& it: _uri.getQueryParameters()) {
         if (it.first == "begin") {
-          Poco::UInt64 beginValue;
-          if (!Poco::NumberParser::tryParseUnsigned64(it.second, beginValue)) {
-            response.setStatus(HTTPResponse::HTTPStatus::HTTP_BAD_REQUEST);
-            response.send() << "<h1>Bad Request</h1>" << std::endl;
+          Poco::Int64 beginValue;
+          if (!_tryParseQuery(response, Poco::NumberParser::tryParse64, it.second, &beginValue)) {
             return;
           }
           begin = beginValue;
@@ -59,40 +70,41 @@ namespace {
       AutoFreePtr<char> buffer((char*)malloc(_requestBufferSize));
       ReadResult result;
 
-      // Read the first piece of output, to determine the response status.
-      result = _outputBuffer->read(begin, buffer.ptr, _requestBufferSize);
+      // Get the first read result
+      result = _outputBuffer->read(begin, buffer.ptr, _requestBufferSize, timeout);
+      while (result.isTimeout) {
+        result = _outputBuffer->read(begin, buffer.ptr, _requestBufferSize, timeout);
+      }
+
+      // If the buffer has closed, stop the connection immediately.
       if (result.isClosed) {
         response.setStatus(HTTPResponse::HTTPStatus::HTTP_GONE);
         response.send() << "<h1>Program exited.</h1>" << std::endl;
         return;
       }
 
-      // There is content to send back to client, send the begin mark and the first piece of output now.
+      // Otherwise enter the streaming response mode.
       response.setStatus(HTTPResponse::HTTPStatus::HTTP_OK);
       response.setChunkedTransferEncoding(true);
       auto &r = response.send();
 
+      // Send the first chunk (with header).
       std::string beginStr = Poco::format("%?x\n", result.begin);
       r.write(beginStr.c_str(), beginStr.length());
       r.write(buffer.ptr, result.count);
       r.flush();
       begin = result.begin + result.count;
 
-      // Now send the following content
+      // Now send the following chunks.
       while (r.good()) {
-        result = _outputBuffer->read(begin, buffer.ptr, _requestBufferSize);
-
-        if (result.isClosed) {
+        result = _outputBuffer->read(begin, buffer.ptr, _requestBufferSize, timeout);
+        if (result.isClosed || result.begin != begin) {
           break;
-
-        } else if (result.begin != begin) {
-          break;
-
-        } else {
+        } else if (!result.isTimeout) {
           r.write(buffer.ptr, result.count);
           r.flush();
+          begin = result.begin + result.count;
         }
-        begin = result.begin + result.count;
       }
     }
   };

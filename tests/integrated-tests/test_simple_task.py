@@ -1,6 +1,9 @@
+import json
 import os
+import time
+from tempfile import TemporaryDirectory
 
-from utils import TestCase, run_executor
+from utils import TestCase, run_executor, start_executor, file_content
 
 
 class SimpleTaskTestCase(TestCase):
@@ -59,3 +62,19 @@ class SimpleTaskTestCase(TestCase):
         output_env = parse_env(output)
         for key, value in expected_default_env.items():
             self.assertEqual(output_env[key], plan[key])
+
+    def test_status_file(self):
+        with TemporaryDirectory() as tmpdir:
+            status_file = os.path.join(tmpdir, 'status.json')
+            proc = start_executor(['bash', '-c', 'sleep 3'], status_file=status_file)
+            try:
+                time.sleep(1.5)
+                status = json.loads(file_content(status_file))
+                self.assertEqual(status['status'], 'RUNNING')
+                proc.wait()
+                status = json.loads(file_content(status_file))
+                self.assertEqual(status['status'], 'EXITED')
+                self.assertEqual(status['exitCode'], 0)
+            finally:
+                proc.kill()
+                proc.wait()

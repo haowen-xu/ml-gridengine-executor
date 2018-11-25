@@ -44,7 +44,10 @@ add_library(
         src/PersistAndCallbackManager.cpp
         src/PersistAndCallbackManager.h
         src/HTTPError.cpp
-        src/HTTPError.h)
+        src/HTTPError.h
+        src/SignalHandler.cpp
+        src/SignalHandler.h
+)
 
 # the main executable program
 add_executable(ml-gridengine-executor src/main.cpp)
@@ -55,5 +58,7 @@ include_directories("${PROJECT_SOURCE_DIR}")
 add_executable(
         ml-gridengine-executor-unit-tests
         tests/unit-tests/main.cpp
-        tests/unit-tests/Utils.test.cpp tests/unit-tests/macros.h)
+        tests/unit-tests/Utils.test.cpp
+        tests/unit-tests/macros.h
+        tests/unit-tests/OutputBuffer.test.cpp)
 target_link_libraries(ml-gridengine-executor-unit-tests ml-gridengine-executor-sources "${POCO_LIBS}" "${POCO_DEP_LIBS}")

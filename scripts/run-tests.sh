@@ -3,7 +3,7 @@
 cd ./build/ || exit 1
 
 # run unit tests
-./ml-gridengine-executor-unit-tests || exit 1
+./ml-gridengine-executor-unit-tests --rng-seed=time || exit 1
 
 # run integrated tests
 [[ -x integrated-tests ]] || ln -sf ../tests/integrated-tests/ integrated-tests || exit 1
