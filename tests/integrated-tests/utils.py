@@ -17,7 +17,7 @@ def file_content(path, binary=True):
             return f.read()
 
 
-def start_executor(args, output_file=None, port=None, callback=None, token=None, env=None,
+def start_executor(args, output_file=None, status_file=None, port=None, callback=None, token=None, env=None,
                    buffer_size=4 * 1024 * 1024, subprocess_kwargs=None):
     S = lambda s: s.decode('utf-8') if isinstance(s, bytes) else s
     executor_args = [
@@ -27,6 +27,8 @@ def start_executor(args, output_file=None, port=None, callback=None, token=None,
     ]
     if output_file:
         executor_args.append('--output-file={}'.format(output_file))
+    if status_file:
+        executor_args.append('--status-file={}'.format(status_file))
     if port:
         executor_args.append('--port={}'.format(port))
     if callback:
@@ -42,7 +44,7 @@ def start_executor(args, output_file=None, port=None, callback=None, token=None,
     return subprocess.Popen(executor_args, **(subprocess_kwargs or {}))
 
 
-def run_executor(args, port=None, callback=None, token=None, env=None,
+def run_executor(args, status_file=None, port=None, callback=None, token=None, env=None,
                  buffer_size=4 * 1024 * 1024, subprocess_kwargs=None):
     with TemporaryDirectory() as tmpdir:
         output_file = os.path.join(tmpdir, 'output.log')
@@ -52,6 +54,7 @@ def run_executor(args, port=None, callback=None, token=None, env=None,
         proc = start_executor(
             args,
             output_file=output_file,
+            status_file=status_file,
             port=port,
             callback=callback,
             token=token,
