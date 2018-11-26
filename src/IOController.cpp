@@ -24,6 +24,9 @@ IOController::~IOController() {
   delete _ioThread;
 }
 
+#include <string>
+#include "Logger.h"
+
 void IOController::_run() {
   ssize_t nBytes;
   AutoFreePtr<void> buffer(malloc(_bufferSize));

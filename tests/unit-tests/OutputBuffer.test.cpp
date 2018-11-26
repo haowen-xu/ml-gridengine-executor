@@ -354,8 +354,10 @@ TEST_CASE("Test re-allocate reader list", "[OutputBuffer]") {
     threads[i].join();
   }
   REQUIRE_EQUALS(capturingLogger.capturedLogs().size(), 1);
-  REQUIRE_EQUALS(capturingLogger.capturedLogs().at(0),
-      CapturedLog("INFO", "Waiting queue for output buffer readers has been re-allocated."));
+  REQUIRE(
+    Catch::startsWith(
+      capturingLogger.capturedLogs().at(0).message,
+      "Waiting queue for output buffer readers has been re-allocated"));
 
   for (int i=0; i<1002; ++i) {
     if (i != 500) {

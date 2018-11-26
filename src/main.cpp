@@ -120,10 +120,16 @@ protected:
           Poco::cat(std::string("\n  "), environList.begin(), environList.end()));
     }
 
-    // Prepare for the working directory
+    // Prepare for the working directory and other directories
     Poco::File workDir(_workDir);
     if (!workDir.exists()) {
       workDir.createDirectories();
+    }
+    if (!_outputFile.empty()) {
+      Utils::makeParents(_outputFile);
+    }
+    if (!_statusFile.empty()) {
+      Utils::makeParents(_statusFile);
     }
 
     // Initialize all related objects.
@@ -167,8 +173,8 @@ protected:
         {
           // This nested scope must exist, such that the child process will not install
           // this signal handler.
-          SignalHandler signalHandler([&executor] {
-            Logger::getLogger().info("Termination signal received, kill the user program ...");
+          SignalHandler signalHandler([&executor] (int signalValue) {
+            Logger::getLogger().info("Termination signal %d received, kill the user program ...", signalValue);
             executor.kill();
           });
           executor.wait();
@@ -251,8 +257,8 @@ protected:
       // run the command
       ProgramExecutor runAfterExecutor(runAfterArgs, environ, std::string(), false, "Run-after command");
       runAfterExecutor.start();
-      SignalHandler signalHandler([&runAfterExecutor] {
-        Logger::getLogger().info("Termination signal received, kill \"run after\" command.");
+      SignalHandler signalHandler([&runAfterExecutor] (int signalValue) {
+        Logger::getLogger().info("Termination signal %d received, kill \"run after\" command.", signalValue);
         runAfterExecutor.kill();
       });
       runAfterExecutor.wait();
@@ -267,8 +273,9 @@ protected:
 
       // Now wait for the persistAndCallbackManager to exit.
       {
-        SignalHandler signalHandler([&persistAndCallback] {
-          Logger::getLogger().info("Termination signal received, stop the persist and callback manager ...");
+        SignalHandler signalHandler([&persistAndCallback] (int signalValue) {
+          Logger::getLogger().info(
+              "Termination signal %d received, stop the persist and callback manager ...", signalValue);
           persistAndCallback.interrupt();
         });
         persistAndCallback.wait();
@@ -278,8 +285,8 @@ protected:
 
     // If no exit, wait for termination
     if (_noExit && !SignalHandler::interrupted()) {
-      SignalHandler signalHandler([] {
-        Logger::getLogger().info("Termination signal received.");
+      SignalHandler signalHandler([] (int signalValue) {
+        Logger::getLogger().info("Termination signal %d received.", signalValue);
       });
       signalHandler.wait();
     }

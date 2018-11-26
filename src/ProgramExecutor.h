@@ -114,11 +114,21 @@ public:
   /**
    * Kill the user program.
    *
+   * @param firstWait Seconds to wait after first attempt to kill by SIGINT.
+   * @param secondWait Seconds to wait after second attempt to kill by SIGINT.
+   * @param finalWait Seconds to wait after final attempt to kill.
+   *
    * @return The pointer to the exit code if the program has exited with a code,
    *         otherwise NULL.
    * @throw Poco::IllegalStateException If the program has not started.
    */
-  void kill();
+  void kill(double firstWait, double secondWait, double finalWait);
+
+  inline void kill() {
+    kill(ML_GRIDENGINE_KILL_PROGRAM_FIRST_WAIT_SECONDS,
+         ML_GRIDENGINE_KILL_PROGRAM_SECOND_WAIT_SECONDS,
+         ML_GRIDENGINE_KILL_PROGRAM_FINAL_WAIT_SECONDS);
+  }
 
   ~ProgramExecutor();
 };

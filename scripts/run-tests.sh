@@ -3,6 +3,7 @@
 cd ./build/ || exit 1
 
 # run unit tests
+export SIGNAL_HANDLER_EXAMPLE_EXE="$(pwd)/SignalHandlerExample"
 ./ml-gridengine-executor-unit-tests --rng-seed=time || exit 1
 
 # run integrated tests
