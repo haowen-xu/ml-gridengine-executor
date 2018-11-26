@@ -68,7 +68,8 @@ class PollingTestCase(TestCase):
 
         # run the executor
         outputs = []
-        with run_executor_context(['bash', '-c', 'sleep 1; ./Count {}'.format(N)], no_exit=True) as (proc, ctx):
+        with run_executor_context(['sh', '-c', 'sleep 1; "{}" {}'.format(get_count_exe(), N)],
+                                  no_exit=True) as (proc, ctx):
             poll_output(ctx['uri'], lambda begin, data: outputs.append((time.time(), begin, data)))
         self.assertGreater(len(outputs), 0)
 

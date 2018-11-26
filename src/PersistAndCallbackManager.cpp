@@ -10,6 +10,7 @@
 #include <Poco/Net/HTTPClientSession.h>
 #include <Poco/JSON/Object.h>
 #include <Poco/FileStream.h>
+#include <Poco/Environment.h>
 #include "HTTPError.h"
 #include "Logger.h"
 #include "PersistAndCallbackManager.h"
@@ -68,7 +69,7 @@ namespace {
       Poco::StreamCopier::copyStream(is, oss);
       std::string responseLogLevel;
       if (response.getStatus() != 200) {
-        std::string const& msg = Poco::format("callback API error: %d %s", (int)response.getStatus(), response.getReason());
+        std::string const& msg = Poco::format("%d %s", (int)response.getStatus(), response.getReason());
         throw HTTPError(response.getStatus(), msg);
       } else {
         Logger::getLogger().info("Callback API response: %s", Poco::trim(oss.str()));
@@ -79,10 +80,18 @@ namespace {
 
 PersistAndCallbackManager::PersistAndCallbackManager(std::string const &statusFile, std::string const &uri,
                                                      std::string const &token, long timeout) :
+  _maxRetry(ML_GRIDENGINE_CALLBACK_MAX_RETRY),
   _statusFile(statusFile),
   _uri(uri),
   _token(token),
-  _timeout(timeout) {
+  _timeout(timeout)
+{
+  unsigned int maxRetry;
+  if (Poco::Environment::has("ML_GRIDENGINE_CALLBACK_MAX_RETRY")) {
+    std::string maxRetryStr = Poco::Environment::get("ML_GRIDENGINE_CALLBACK_MAX_RETRY");
+    if (Poco::NumberParser::tryParseUnsigned(maxRetryStr, maxRetry))
+      _maxRetry = maxRetry;
+  }
 }
 
 PersistAndCallbackManager::~PersistAndCallbackManager() {
@@ -93,7 +102,32 @@ void PersistAndCallbackManager::_postEvent(std::string const& eventType, Poco::J
     Poco::JSON::Object payload;
     payload.set("eventType", eventType);
     payload.set("data", doc);
-    post(Poco::URI(_uri), _token, _timeout, jsonToString(payload));
+
+    // post with retry
+    unsigned int sleepTime = 5, nextSleepTime = 8;
+
+    for (unsigned int i=0; i<=_maxRetry; ++i) {
+      try {
+        post(Poco::URI(_uri), _token, _timeout, jsonToString(payload));
+        break;
+      } catch (Poco::Exception const &exc) {
+        Logger::getLogger().error("Error posting to callback API: %s", exc.displayText());
+      } catch (std::exception const &exc) {
+        Logger::getLogger().error("Error posting to callback API: %s", std::string(exc.what()));
+      }
+
+      if (i < _maxRetry) {
+        Logger::getLogger().info("Will retry posting to callback API after %u seconds.", sleepTime);
+        sleep(sleepTime);
+
+        // increase the sleep time according to the Fibonacci sequence.
+        unsigned int nextNextSleepTime = sleepTime + nextSleepTime;
+        sleepTime = nextSleepTime;
+        nextSleepTime = nextNextSleepTime;
+      } else {
+        Logger::getLogger().info("Too many retrials, give up posting to the callback API.");
+      }
+    }
   }
 }
 

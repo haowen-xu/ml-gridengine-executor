@@ -35,6 +35,7 @@ class PersistAndCallbackManager {
   DEFINE_NON_PRIMITIVE_PROPERTY(std::string, token);
 
 private:
+  int _maxRetry;  // maximum number of retrials for each postEvent
   long _timeout;  // timeout for a single request, in milliseconds
   std::string _hostName;
   int _port;

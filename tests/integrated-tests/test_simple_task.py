@@ -64,7 +64,7 @@ class SimpleTaskTestCase(TestCase):
             self.assertEqual(output_env[key], plan[key])
 
     def test_status_file(self):
-        with run_executor_context(['bash', '-c', 'sleep 3']) as (proc, ctx):
+        with run_executor_context(['sh', '-c', 'sleep 3']) as (proc, ctx):
             status_file = ctx['status_file']
 
             time.sleep(1.5)
@@ -83,7 +83,7 @@ class SimpleTaskTestCase(TestCase):
                 work_dir += '/'
             status_file = os.path.join(tmpdir, 'status.json')
             after_log = os.path.join(tmpdir, 'after.json')
-            proc = start_executor(['bash', '-c', 'echo hello > message.txt; exit 123'],
+            proc = start_executor(['sh', '-c', 'echo hello > message.txt; exit 123'],
                                   status_file=status_file, work_dir=work_dir, run_after=get_after_script(after_log),
                                   no_exit=True)
             try:
