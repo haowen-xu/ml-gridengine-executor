@@ -13,6 +13,6 @@ class LargeOutputsTestCase(TestCase):
             discarded_length, discarded_length / 1048576.).encode('utf-8') + total_output[-save_length:]
 
         self.assertEqual(
-            run_executor(['./Count', str(N)], buffer_size=save_length)[0],
+            run_executor([get_count_exe(), str(N)], buffer_size=save_length)[0],
             expected_output
         )
