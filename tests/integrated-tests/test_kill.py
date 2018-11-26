@@ -13,6 +13,9 @@ class KillTestCase(TestCase):
             status_file = os.path.join(tmpdir, 'status.json')
             output_file = os.path.join(tmpdir, 'output.log')
             after_log = os.path.join(tmpdir, 'after.json')
+            work_dir = os.path.join(tmpdir, 'work_dir')
+            if not work_dir.endswith('/'):
+                work_dir += '/'
             args = ['python', '-c', 'import time\n'
                                     'i = 0\n'
                                     'while True:\n'
@@ -29,7 +32,7 @@ class KillTestCase(TestCase):
                 b'ML_GRIDENGINE_KILL_PROGRAM_SECOND_WAIT_SECONDS': b'2',
                 b'ML_GRIDENGINE_KILL_PROGRAM_FINAL_WAIT_SECONDS': b'3'
             })
-            proc = start_executor(args, status_file=status_file, output_file=output_file,
+            proc = start_executor(args, status_file=status_file, output_file=output_file, work_dir=work_dir,
                                   run_after=get_after_script(after_log), subprocess_kwargs={'env': env})
             try:
                 time.sleep(.5)
@@ -45,11 +48,8 @@ class KillTestCase(TestCase):
 
                 after_log = get_after_log(after_log)
                 print(after_log)
-                expected_work_dir = os.path.abspath('.').rstrip('.')
-                if not expected_work_dir.endswith('/'):
-                    expected_work_dir += '/'
                 self.assertDictEqual(after_log, {
-                    'workDir': expected_work_dir,
+                    'workDir': work_dir,
                     'exitStatus': 'SIGNALLED',
                     'exitSignal': str(int(signal.SIGKILL))
                 })

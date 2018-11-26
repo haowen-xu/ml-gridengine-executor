@@ -27,7 +27,7 @@ def get_after_log(after_log):
 
 
 def start_executor(args, output_file=None, status_file=None, port=None, callback=None, token=None, env=None,
-                   run_after=None, buffer_size=4 * 1024 * 1024, subprocess_kwargs=None):
+                   work_dir=None, run_after=None, buffer_size=4 * 1024 * 1024, subprocess_kwargs=None):
     S = lambda s: s.decode('utf-8') if isinstance(s, bytes) else s
     executor_args = [
         './ml-gridengine-executor',
@@ -47,6 +47,8 @@ def start_executor(args, output_file=None, status_file=None, port=None, callback
     if env:
         for k, v in env.items():
             executor_args.append('--env={}={}'.format(S(k), S(v)))
+    if work_dir:
+        executor_args.append('--work-dir={}'.format(work_dir))
     if run_after:
         executor_args.append('--run-after={}'.format(run_after))
     executor_args.append('--')
@@ -56,7 +58,7 @@ def start_executor(args, output_file=None, status_file=None, port=None, callback
 
 
 def run_executor(args, status_file=None, port=None, callback=None, token=None, env=None,
-                 buffer_size=4 * 1024 * 1024, subprocess_kwargs=None):
+                 work_dir=None, run_after=None, buffer_size=4 * 1024 * 1024, subprocess_kwargs=None):
     with TemporaryDirectory() as tmpdir:
         output_file = os.path.join(tmpdir, 'output.log')
         subprocess_kwargs = subprocess_kwargs or {}
@@ -70,6 +72,8 @@ def run_executor(args, status_file=None, port=None, callback=None, token=None, e
             callback=callback,
             token=token,
             env=env,
+            work_dir=work_dir,
+            run_after=run_after,
             buffer_size=buffer_size,
             subprocess_kwargs=subprocess_kwargs
         )
