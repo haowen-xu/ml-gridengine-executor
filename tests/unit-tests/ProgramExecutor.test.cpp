@@ -3,6 +3,7 @@
 //
 
 #include <unistd.h>
+#include <signal.h>
 #include <string>
 #include <Poco/Thread.h>
 #include <catch2/catch.hpp>
