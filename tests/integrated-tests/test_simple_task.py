@@ -3,11 +3,11 @@ import os
 import time
 from tempfile import TemporaryDirectory
 
-from utils import TestCase, run_executor, start_executor, file_content
+from utils import *
 
 
 class SimpleTaskTestCase(TestCase):
-    """Test executing simple tasks."""
+    '''Test executing simple tasks.'''
 
     def test_capture_outputs(self):
         self.assertEqual(
@@ -78,3 +78,4 @@ class SimpleTaskTestCase(TestCase):
             finally:
                 proc.kill()
                 proc.wait()
+

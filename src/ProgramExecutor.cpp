@@ -14,6 +14,7 @@
 #include <Poco/RunnableAdapter.h>
 #include <Poco/Thread.h>
 #include <Poco/Environment.h>
+#include <Poco/NumberParser.h>
 #include "ProgramExecutor.h"
 #include "Logger.h"
 
@@ -236,4 +237,22 @@ void ProgramExecutor::kill(double firstWait, double secondWait, double finalWait
       }
     }
   }
+}
+
+namespace {
+  void tryParseEnv(std::string const& key, int *dst, int defaultValue) {
+    if (!Poco::Environment::has(key) || !Poco::NumberParser::tryParse(Poco::Environment::get(key), *dst)) {
+      *dst = defaultValue;
+    }
+  }
+
+#define TRY_PARSE_ENV(KEY, DST) tryParseEnv(#KEY, &(DST), KEY)
+}
+
+void ProgramExecutor::kill() {
+  int firstWait, secondWait, finalWait;
+  TRY_PARSE_ENV(ML_GRIDENGINE_KILL_PROGRAM_FIRST_WAIT_SECONDS, firstWait);
+  TRY_PARSE_ENV(ML_GRIDENGINE_KILL_PROGRAM_SECOND_WAIT_SECONDS, secondWait);
+  TRY_PARSE_ENV(ML_GRIDENGINE_KILL_PROGRAM_FINAL_WAIT_SECONDS, finalWait);
+  kill(firstWait, secondWait, finalWait);
 }

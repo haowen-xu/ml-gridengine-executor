@@ -1,11 +1,10 @@
 import codecs
+import json
 import os
 import subprocess
 import sys
 import unittest
 from tempfile import TemporaryDirectory
-
-__all__ = ['file_content', 'start_executor', 'run_executor', 'TestCase']
 
 
 def file_content(path, binary=True):
@@ -17,8 +16,18 @@ def file_content(path, binary=True):
             return f.read()
 
 
+def get_after_script(after_log):
+    return 'python "{}" "{}"'.format(
+        os.path.join(os.path.split(os.path.abspath(__file__))[0], 'after_script.py'), after_log)
+
+
+def get_after_log(after_log):
+    with codecs.open(after_log, 'rb', 'utf-8') as f:
+        return json.loads(f.read())
+
+
 def start_executor(args, output_file=None, status_file=None, port=None, callback=None, token=None, env=None,
-                   buffer_size=4 * 1024 * 1024, subprocess_kwargs=None):
+                   run_after=None, buffer_size=4 * 1024 * 1024, subprocess_kwargs=None):
     S = lambda s: s.decode('utf-8') if isinstance(s, bytes) else s
     executor_args = [
         './ml-gridengine-executor',
@@ -38,9 +47,11 @@ def start_executor(args, output_file=None, status_file=None, port=None, callback
     if env:
         for k, v in env.items():
             executor_args.append('--env={}={}'.format(S(k), S(v)))
+    if run_after:
+        executor_args.append('--run-after={}'.format(run_after))
     executor_args.append('--')
     executor_args.extend(args)
-    print('Run executor: {}'.format(executor_args))
+    print('Start executor: {}'.format(executor_args))
     return subprocess.Popen(executor_args, **(subprocess_kwargs or {}))
 
 

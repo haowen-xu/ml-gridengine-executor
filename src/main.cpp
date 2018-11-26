@@ -233,7 +233,7 @@ protected:
     }
 
     // run command after execution
-    if (!_runAfter.empty() && !SignalHandler::interrupted()) {
+    if (!_runAfter.empty()) {
       // prepare for the command
       ArgList runAfterArgs = {shell, "-c", _runAfter};
       EnvironMap environ(_environ);
@@ -257,11 +257,11 @@ protected:
       // run the command
       ProgramExecutor runAfterExecutor(runAfterArgs, environ, std::string(), false, "Run-after command");
       runAfterExecutor.start();
-      SignalHandler signalHandler([&runAfterExecutor] (int signalValue) {
-        Logger::getLogger().info("Termination signal %d received, kill \"run after\" command.", signalValue);
+      if (!runAfterExecutor.wait(ML_GRIDENGINE_RUN_AFTER_TIMEOUT_SECONDS * 1000)) {
+        Logger::getLogger().error(
+            "Run-after command did not finish in %d seconds.", ML_GRIDENGINE_RUN_AFTER_TIMEOUT_SECONDS);
         runAfterExecutor.kill();
-      });
-      runAfterExecutor.wait();
+      }
     }
 
     // wait for the persist and callback manager to finish

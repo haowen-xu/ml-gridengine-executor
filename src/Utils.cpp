@@ -55,7 +55,12 @@ std::string Utils::formatSize(size_t size) {
 
 void Utils::makeParents(std::string const &filePath) {
   Poco::Path path(filePath);
-  Poco::File parentDir(path.parent());
+  Poco::File parentDir;
+  try {
+    parentDir = path.absolute().parent();
+  } catch (Poco::Exception const&) {
+    return;
+  }
   if (!parentDir.exists()) {
     parentDir.createDirectories();
   }

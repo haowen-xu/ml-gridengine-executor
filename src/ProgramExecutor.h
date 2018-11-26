@@ -124,11 +124,7 @@ public:
    */
   void kill(double firstWait, double secondWait, double finalWait);
 
-  inline void kill() {
-    kill(ML_GRIDENGINE_KILL_PROGRAM_FIRST_WAIT_SECONDS,
-         ML_GRIDENGINE_KILL_PROGRAM_SECOND_WAIT_SECONDS,
-         ML_GRIDENGINE_KILL_PROGRAM_FINAL_WAIT_SECONDS);
-  }
+  void kill();
 
   ~ProgramExecutor();
 };
