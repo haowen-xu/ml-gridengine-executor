@@ -3,7 +3,9 @@ import json
 import os
 import subprocess
 import sys
+import time
 import unittest
+from contextlib import contextmanager
 from tempfile import TemporaryDirectory
 
 
@@ -27,7 +29,7 @@ def get_after_log(after_log):
 
 
 def start_executor(args, output_file=None, status_file=None, port=None, callback=None, token=None, env=None,
-                   work_dir=None, run_after=None, buffer_size=4 * 1024 * 1024, subprocess_kwargs=None):
+                   work_dir=None, run_after=None, no_exit=False, buffer_size=4 * 1024 * 1024, subprocess_kwargs=None):
     S = lambda s: s.decode('utf-8') if isinstance(s, bytes) else s
     executor_args = [
         './ml-gridengine-executor',
@@ -51,36 +53,42 @@ def start_executor(args, output_file=None, status_file=None, port=None, callback
         executor_args.append('--work-dir={}'.format(work_dir))
     if run_after:
         executor_args.append('--run-after={}'.format(run_after))
+    if no_exit:
+        executor_args.append('--no-exit')
     executor_args.append('--')
     executor_args.extend(args)
     print('Start executor: {}'.format(executor_args))
     return subprocess.Popen(executor_args, **(subprocess_kwargs or {}))
 
 
-def run_executor(args, status_file=None, port=None, callback=None, token=None, env=None,
-                 work_dir=None, run_after=None, buffer_size=4 * 1024 * 1024, subprocess_kwargs=None):
+@contextmanager
+def run_executor_context(args, **kwargs):
     with TemporaryDirectory() as tmpdir:
-        output_file = os.path.join(tmpdir, 'output.log')
-        subprocess_kwargs = subprocess_kwargs or {}
-        subprocess_kwargs['stdout'] = subprocess.PIPE
-        subprocess_kwargs['stderr'] = subprocess.STDOUT
-        proc = start_executor(
-            args,
-            output_file=output_file,
-            status_file=status_file,
-            port=port,
-            callback=callback,
-            token=token,
-            env=env,
-            work_dir=work_dir,
-            run_after=run_after,
-            buffer_size=buffer_size,
-            subprocess_kwargs=subprocess_kwargs
-        )
+        kwargs.setdefault('status_file', os.path.join(tmpdir, 'status.json'))
+        kwargs.setdefault('output_file', os.path.join(tmpdir, 'output.log'))
+        status_file = kwargs['status_file']
+        proc = start_executor(args, **kwargs)
+        try:
+            while proc.poll() is None and not os.path.exists(status_file):
+                time.sleep(.1)
+            status = json.loads(file_content(status_file, binary=False))
+            yield proc, {'uri': 'http://127.0.0.1:{}'.format(status['executor.port']),
+                         'status_file': status_file,
+                         'output_file': kwargs['output_file']}
+        finally:
+            proc.kill()
+            proc.wait()
+
+
+def run_executor(args, **kwargs):
+    kwargs.setdefault('subprocess_kwargs', {})
+    kwargs['subprocess_kwargs'].setdefault('stdout', subprocess.PIPE)
+    kwargs['subprocess_kwargs'].setdefault('stderr', subprocess.STDOUT)
+    with run_executor_context(args, **kwargs) as (proc, ctx):
         executor_output = None
         try:
             executor_output = proc.stdout.read()
-            with open(output_file, 'rb') as f:
+            with open(ctx['output_file'], 'rb') as f:
                 program_output = f.read()
             return program_output, executor_output
         except Exception:
@@ -90,6 +98,14 @@ def run_executor(args, status_file=None, port=None, callback=None, token=None, e
         finally:
             proc.kill()
             proc.wait()
+
+
+def get_count_output(N):
+    if N not in _cached_output_output:
+        _cached_output_output[N] = subprocess.check_output(['./Count', str(N)])
+    return _cached_output_output[N]
+
+_cached_output_output = {}
 
 
 class TestCase(unittest.TestCase):

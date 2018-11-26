@@ -1,5 +1,5 @@
+import requests
 import signal
-import time
 
 import pytest
 
@@ -8,7 +8,30 @@ from utils import *
 
 class KillTestCase(TestCase):
 
-    def test_force_kill(self):
+    def test_kill_by_server(self):
+        args = ['python', '-c', 'import sys\n'
+                                'import time\n'
+                                'try:\n'
+                                '  for i in range(100):\n'
+                                '    print(i)\n'
+                                '    time.sleep(1)\n'
+                                'except KeyboardInterrupt:\n'
+                                '  sys.exit(123)\n']
+        with run_executor_context(args) as (proc, ctx):
+            time.sleep(.5)
+            kill_uri = ctx['uri'].rstrip('/') + '/_kill'
+
+            # test kill it
+            r = requests.post(kill_uri, data={})
+            self.assertEqual(r.status_code, 200)
+            self.assertDictEqual(r.json(), {'status': 'exited', 'exitCode': 123})
+
+            # test double kill
+            r = requests.post(kill_uri, data={})
+            self.assertEqual(r.status_code, 200)
+            self.assertDictEqual(r.json(), {'status': 'exited', 'exitCode': 123})
+
+    def test_kill_and_run_after(self):
         with TemporaryDirectory() as tmpdir:
             status_file = os.path.join(tmpdir, 'status.json')
             output_file = os.path.join(tmpdir, 'output.log')

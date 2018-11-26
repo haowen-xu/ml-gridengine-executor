@@ -68,6 +68,9 @@ target_link_libraries(ml-gridengine-executor-unit-tests ml-gridengine-executor-s
 
 # the test assets
 add_executable(
+        Count
+        tests/assets/Count.cpp)
+add_executable(
         SignalHandlerExample
         tests/assets/SignalHandlerExample.cpp)
 target_link_libraries(SignalHandlerExample ml-gridengine-executor-sources "${POCO_LIBS}" "${POCO_DEP_LIBS}")
