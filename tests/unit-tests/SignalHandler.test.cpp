@@ -4,6 +4,8 @@
 
 #include <unistd.h>
 #include <signal.h>
+#include <sys/wait.h>
+#include <sys/types.h>
 #include <string.h>
 #include <Poco/Mutex.h>
 #include <Poco/Semaphore.h>
