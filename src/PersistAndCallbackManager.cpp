@@ -146,7 +146,7 @@ void PersistAndCallbackManager::programFinished(ProgramExecutor const& executor)
     case SIGNALLED:
       programStatus = "SIGNALLED";
       doc.set("status", programStatus);
-      doc.set("exitCode", executor.exitSignal());
+      doc.set("exitSignal", executor.exitSignal());
       break;
     case CANNOT_KILL:
       programStatus = "CANNOT_KILL";

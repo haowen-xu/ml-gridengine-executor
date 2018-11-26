@@ -16,7 +16,7 @@ include_directories("${PROJECT_SOURCE_DIR}/3rdparty")
 # setup compiler options
 set(CMAKE_CXX_STANDARD 11)
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11")
-include_directories("${POCO_INCLUDE_DIR}")
+include_directories("${POCO_INCLUDE_DIR}" "${PROJECT_SOURCE_DIR}")
 link_directories("${POCO_LIB_DIR}")
 
 # the main sources
@@ -54,11 +54,23 @@ add_executable(ml-gridengine-executor src/main.cpp)
 target_link_libraries(ml-gridengine-executor ml-gridengine-executor-sources "${POCO_LIBS}" "${POCO_DEP_LIBS}")
 
 # the tests
-include_directories("${PROJECT_SOURCE_DIR}")
 add_executable(
         ml-gridengine-executor-unit-tests
         tests/unit-tests/main.cpp
-        tests/unit-tests/Utils.test.cpp
         tests/unit-tests/macros.h
-        tests/unit-tests/OutputBuffer.test.cpp)
+        tests/unit-tests/CapturingLogger.cpp
+        tests/unit-tests/CapturingLogger.h
+        tests/unit-tests/Utils.test.cpp
+        tests/unit-tests/OutputBuffer.test.cpp
+        tests/unit-tests/ProgramExecutor.test.cpp
+        tests/unit-tests/SignalHandler.test.cpp)
 target_link_libraries(ml-gridengine-executor-unit-tests ml-gridengine-executor-sources "${POCO_LIBS}" "${POCO_DEP_LIBS}")
+
+# the test assets
+add_executable(
+        Count
+        tests/assets/Count.cpp)
+add_executable(
+        SignalHandlerExample
+        tests/assets/SignalHandlerExample.cpp)
+target_link_libraries(SignalHandlerExample ml-gridengine-executor-sources "${POCO_LIBS}" "${POCO_DEP_LIBS}")

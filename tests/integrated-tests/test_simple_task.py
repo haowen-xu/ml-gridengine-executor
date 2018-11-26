@@ -1,9 +1,9 @@
-import json
-import os
+import signal
 import time
-from tempfile import TemporaryDirectory
 
-from utils import TestCase, run_executor, start_executor, file_content
+import pytest
+
+from utils import *
 
 
 class SimpleTaskTestCase(TestCase):
@@ -64,17 +64,48 @@ class SimpleTaskTestCase(TestCase):
             self.assertEqual(output_env[key], plan[key])
 
     def test_status_file(self):
+        with run_executor_context(['bash', '-c', 'sleep 3']) as (proc, ctx):
+            status_file = ctx['status_file']
+
+            time.sleep(1.5)
+            status = json.loads(file_content(status_file, binary=False))
+            self.assertEqual(status['status'], 'RUNNING')
+
+            proc.wait()
+            status = json.loads(file_content(status_file, binary=False))
+            self.assertEqual(status['status'], 'EXITED')
+            self.assertEqual(status['exitCode'], 0)
+
+    def test_work_dir_exit_code_and_run_after_and_no_exit(self):
         with TemporaryDirectory() as tmpdir:
+            work_dir = os.path.join(tmpdir, 'work_dir')
+            if not work_dir.endswith('/'):
+                work_dir += '/'
             status_file = os.path.join(tmpdir, 'status.json')
-            proc = start_executor(['bash', '-c', 'sleep 3'], status_file=status_file)
+            after_log = os.path.join(tmpdir, 'after.json')
+            proc = start_executor(['bash', '-c', 'echo hello > message.txt; exit 123'],
+                                  status_file=status_file, work_dir=work_dir, run_after=get_after_script(after_log),
+                                  no_exit=True)
             try:
-                time.sleep(1.5)
-                status = json.loads(file_content(status_file, binary=False))
-                self.assertEqual(status['status'], 'RUNNING')
-                proc.wait()
+                with pytest.raises(subprocess.TimeoutExpired):
+                    proc.wait(.5)
                 status = json.loads(file_content(status_file, binary=False))
                 self.assertEqual(status['status'], 'EXITED')
-                self.assertEqual(status['exitCode'], 0)
+                self.assertEqual(status['exitCode'], 123)
+
+                after_log = get_after_log(after_log)
+                self.assertDictEqual(after_log, {
+                    'workDir': work_dir,
+                    'exitStatus': 'EXITED',
+                    'exitCode': '123'
+                })
+
+                message = file_content(os.path.join(work_dir, 'message.txt'), binary=False)
+                self.assertEqual(message, 'hello\n')
+
+                proc.send_signal(signal.SIGINT)
+                self.assertEqual(proc.wait(), 0)
+
             finally:
                 proc.kill()
                 proc.wait()

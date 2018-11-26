@@ -14,6 +14,7 @@
 #include <Poco/RunnableAdapter.h>
 #include <Poco/Thread.h>
 #include <Poco/Environment.h>
+#include <Poco/NumberParser.h>
 #include "ProgramExecutor.h"
 #include "Logger.h"
 
@@ -203,31 +204,31 @@ void ProgramExecutor::_killIfRunning(int signal) {
   }
 }
 
-void ProgramExecutor::kill() {
+void ProgramExecutor::kill(double firstWait, double secondWait, double finalWait) {
   if (_status == RUNNING) {
     Poco::Mutex::ScopedLock scopedLock(*_killMutex);
 
     // First step, attempt to kill by signal SIGINT
     _killIfRunning(SIGINT);
-    if (!wait(ML_GRIDENGINE_KILL_PROGRAM_FIRST_WAIT_SECONDS * 1000)) {
+    if (!wait((long)(firstWait * 1000))) {
       // Second step, attempt to kill by signal SIGINT.
       //
       // Some applications may listen to a double CTRL+C signal, in which the first
       // Ctrl+C tells the application to exit cleanly, while the second Ctrl+C tells
       // the application to exit immediately.  We thus attempt to emit this second
       // Ctrl+C signal here.
-      Logger::getLogger().warn("%s does not exit after received Ctrl+C for %d seconds, "
-                               "send Ctrl+C again.", _loggingTag, ML_GRIDENGINE_KILL_PROGRAM_FIRST_WAIT_SECONDS);
+      Logger::getLogger().warn("%s does not exit after received Ctrl+C for %.2f seconds, "
+                               "send Ctrl+C again.", _loggingTag, firstWait);
       _killIfRunning(SIGINT);
 
-      if (!wait(ML_GRIDENGINE_KILL_PROGRAM_SECOND_WAIT_SECONDS * 1000)) {
-        Logger::getLogger().warn("%s does not exit after received double Ctrl+C for %d seconds, "
-                                 "now ready to kill it.", _loggingTag, ML_GRIDENGINE_KILL_PROGRAM_SECOND_WAIT_SECONDS);
+      if (!wait((long)(secondWait * 1000))) {
+        Logger::getLogger().warn("%s does not exit after received double Ctrl+C for %.2f seconds, "
+                                 "now ready to kill it.", _loggingTag, secondWait);
         _killIfRunning(SIGKILL);
 
-        if (!wait(ML_GRIDENGINE_KILL_PROGRAM_FINAL_WAIT_SECONDS * 1000)) {
-          Logger::getLogger().warn("%s does not exit after being killed for %d seconds, now give up.", _loggingTag,
-                                   ML_GRIDENGINE_KILL_PROGRAM_FINAL_WAIT_SECONDS);
+        if (!wait((long)(finalWait * 1000))) {
+          Logger::getLogger().warn(
+              "%s does not exit after being killed for %.2f seconds, now give up.", _loggingTag, finalWait);
           Poco::Mutex::ScopedLock scopedLock2(*_waitMutex);
           _status = CANNOT_KILL;
           close(_pipeFd);  // force closing the pipe, in order for the IO controller to stop
@@ -236,4 +237,22 @@ void ProgramExecutor::kill() {
       }
     }
   }
+}
+
+namespace {
+  void tryParseEnv(std::string const& key, int *dst, int defaultValue) {
+    if (!Poco::Environment::has(key) || !Poco::NumberParser::tryParse(Poco::Environment::get(key), *dst)) {
+      *dst = defaultValue;
+    }
+  }
+
+#define TRY_PARSE_ENV(KEY, DST) tryParseEnv(#KEY, &(DST), KEY)
+}
+
+void ProgramExecutor::kill() {
+  int firstWait, secondWait, finalWait;
+  TRY_PARSE_ENV(ML_GRIDENGINE_KILL_PROGRAM_FIRST_WAIT_SECONDS, firstWait);
+  TRY_PARSE_ENV(ML_GRIDENGINE_KILL_PROGRAM_SECOND_WAIT_SECONDS, secondWait);
+  TRY_PARSE_ENV(ML_GRIDENGINE_KILL_PROGRAM_FINAL_WAIT_SECONDS, finalWait);
+  kill(firstWait, secondWait, finalWait);
 }

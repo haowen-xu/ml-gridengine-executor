@@ -38,8 +38,8 @@ namespace {
     }
   };
 
-  class OutputStreamHandler : public HTTPRequestHandler {
-    HANDLER_CONSTRUCTOR(OutputStreamHandler) {}
+  class OutputPollHandler : public HTTPRequestHandler {
+    HANDLER_CONSTRUCTOR(OutputPollHandler) {}
   private:
     template <typename Function, typename T>
     bool _tryParseQuery(HTTPServerResponse& response, Function const& f, std::string const& s, T *dst) {
@@ -55,7 +55,9 @@ namespace {
   public:
     virtual void handleRequest(HTTPServerRequest& request, HTTPServerResponse& response) {
       ssize_t begin = 0;
-      int timeout = (int)(ML_GRIDENGINE_CLIENT_READ_TIMEOUT_SECONDS * 1000);
+      long maxTimeout = (long)(ML_GRIDENGINE_CLIENT_READ_MAX_TIMEOUT_SECONDS * 1000L);
+      long timeout = (long)(ML_GRIDENGINE_CLIENT_READ_DEFAULT_TIMEOUT_SECONDS * 1000L);
+      size_t readCount = 0;
 
       for (auto const& it: _uri.getQueryParameters()) {
         if (it.first == "begin") {
@@ -64,46 +66,76 @@ namespace {
             return;
           }
           begin = beginValue;
+        } else if (it.first == "timeout") {
+          Poco::UInt32 timeoutValue;
+          if (!_tryParseQuery(response, Poco::NumberParser::tryParseUnsigned, it.second, &timeoutValue)) {
+            return;
+          }
+          timeout = std::min(timeoutValue * 1000L, maxTimeout);
+        } else if (it.first == "count") {
+          Poco::UInt32 countValue;
+          if (!_tryParseQuery(response, Poco::NumberParser::tryParseUnsigned, it.second, &countValue)) {
+            return;
+          }
+          readCount = countValue;
         }
       }
 
-      AutoFreePtr<char> buffer((char*)malloc(_requestBufferSize));
-      ReadResult result;
-
-      // Get the first read result
-      result = _outputBuffer->read(begin, buffer.ptr, _requestBufferSize, timeout);
-      while (result.isTimeout) {
-        result = _outputBuffer->read(begin, buffer.ptr, _requestBufferSize, timeout);
-      }
+      size_t bufferSize = readCount > 0 ? std::min(_requestBufferSize, readCount) : _requestBufferSize;
+      size_t writtenBytes = 0;
+      AutoFreePtr<char> buffer((char*)malloc(bufferSize));
+      ReadResult result = _outputBuffer->read(begin, buffer.ptr, bufferSize, timeout);
 
       // If the buffer has closed, stop the connection immediately.
       if (result.isClosed) {
         response.setStatus(HTTPResponse::HTTPStatus::HTTP_GONE);
         response.send() << "<h1>Program exited.</h1>" << std::endl;
-        return;
       }
 
-      // Otherwise enter the streaming response mode.
-      response.setStatus(HTTPResponse::HTTPStatus::HTTP_OK);
-      response.setChunkedTransferEncoding(true);
-      auto &r = response.send();
+      // timeout, no content yet
+      else if (result.isTimeout) {
+        response.setStatus(HTTPResponse::HTTPStatus::HTTP_NO_CONTENT);
+        response.send();
+      }
 
-      // Send the first chunk (with header).
-      std::string beginStr = Poco::format("%?x\n", result.begin);
-      r.write(beginStr.c_str(), beginStr.length());
-      r.write(buffer.ptr, result.count);
-      r.flush();
-      begin = result.begin + result.count;
+      // If not timeout, send the content
+      else {
+        response.setStatus(HTTPResponse::HTTPStatus::HTTP_OK);
+        response.setChunkedTransferEncoding(true);
+        auto &r = response.send();
 
-      // Now send the following chunks.
-      while (r.good()) {
-        result = _outputBuffer->read(begin, buffer.ptr, _requestBufferSize, timeout);
-        if (result.isClosed || result.begin != begin) {
-          break;
-        } else if (!result.isTimeout) {
-          r.write(buffer.ptr, result.count);
-          r.flush();
-          begin = result.begin + result.count;
+        // send the header (begin position in hex)
+        std::string beginStr = Poco::format("%?x\n", result.begin);
+        r.write(beginStr.c_str(), beginStr.length());
+
+        // send the first piece of output
+        r.write(buffer.ptr, result.count);
+        r.flush();
+        begin = result.begin + result.count;
+        writtenBytes += result.count;
+
+        // send the remaining output if immediately fetchable
+        if (readCount > 0) {
+          while (writtenBytes < readCount && r.good()) {
+            size_t newReadCount = std::min(readCount - writtenBytes, bufferSize);
+            result = _outputBuffer->tryRead(begin, buffer.ptr, newReadCount);
+            if (result.isTimeout || result.isClosed || begin != result.begin)
+              break;
+            r.write(buffer.ptr, result.count);
+            r.flush();
+            begin = result.begin + result.count;
+            writtenBytes += result.count;
+          }
+        } else {
+          while (r.good()) {
+            result = _outputBuffer->tryRead(begin, buffer.ptr, bufferSize);
+            if (result.isTimeout || result.isClosed || begin != result.begin)
+              break;
+            r.write(buffer.ptr, result.count);
+            r.flush();
+            begin = result.begin + result.count;
+            writtenBytes += result.count;
+          }
         }
       }
     }
@@ -143,8 +175,8 @@ WebServerFactory::WebServerFactory(ProgramExecutor *executor, OutputBuffer *outp
 
 HTTPRequestHandler *WebServerFactory::createRequestHandler(HTTPServerRequest const &request) {
   Poco::URI uri(request.getURI());
-  if (uri.getPath() == "/output/_stream") {
-    return new OutputStreamHandler(uri, this);
+  if (uri.getPath() == "/output/_poll") {
+    return new OutputPollHandler(uri, this);
   } else if (uri.getPath() == "/_kill") {
     return new KillHandler(uri, this);
   } else {

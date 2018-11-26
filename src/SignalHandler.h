@@ -8,7 +8,7 @@
 #include <functional>
 
 /** Callback method of a signal handler. */
-typedef std::function<void()> SignalHandlerCallback;
+typedef std::function<void(int)> SignalHandlerCallback;
 
 /**
  * A scoped signal handler.
@@ -27,7 +27,7 @@ public:
 
   void wait();
 
-  void notify(int signal_value);
+  void notify(int signalValue);
 
   static bool interrupted();
 };

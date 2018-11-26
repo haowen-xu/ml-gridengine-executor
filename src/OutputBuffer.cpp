@@ -75,7 +75,7 @@ public:
   void cancel(ReadRequestPtr const& ptr) {
     --_activeCount;
     ptr->cancel();
-    if (_activeCount * 8 < _heapSize) {
+    if (_activeCount * 8 < _heapSize && _heapSize > 1000) {
       AutoDelete<HeapType> newHeap(new HeapType);
       for (auto const &itm: *_heap) {
         if (!itm->cancelled) {
@@ -83,8 +83,10 @@ public:
         }
       }
       newHeap.swap(&_heap);
+      size_t oldHeapSize = _heapSize;
       _heapSize = _activeCount;
-      Logger::getLogger().info("Waiting queue for output buffer readers has been re-allocated.");
+      Logger::getLogger().info(
+          "Waiting queue for output buffer readers has been re-allocated (%z -> %z).", oldHeapSize, _heapSize);
     }
   }
 

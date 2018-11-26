@@ -9,7 +9,7 @@
 #include "SignalHandler.h"
 
 namespace {
-  void globalSignalHandlerFunc(int signal_value);
+  void globalSignalHandlerFunc(int signalValue);
 
   class GlobalSignalHandler {
   private:
@@ -73,15 +73,15 @@ namespace {
     }
 
     /**
-     * Notify this global handler using {@arg signal_value}.
+     * Notify this global handler using {@arg signalValue}.
      *
-     * @param signal_value The signal value.
+     * @param signalValue The signal value.
      */
-    void notify(int signal_value) {
+    void notify(int signalValue) {
       Poco::Mutex::ScopedLock scopedLock(_mutex);
       _interrupted = true;
       for (auto it=_stack.rbegin(); it!=_stack.rend(); ++it) {
-        (*it)->notify(signal_value);
+        (*it)->notify(signalValue);
       }
       _cond.broadcast();
     }
@@ -97,11 +97,11 @@ namespace {
     }
   };
 
-  void globalSignalHandlerFunc(int signal_value) {
-    switch (signal_value) {
+  void globalSignalHandlerFunc(int signalValue) {
+    switch (signalValue) {
       case SIGINT:
       case SIGTERM:
-        GlobalSignalHandler::getInstance()->notify(signal_value);
+        GlobalSignalHandler::getInstance()->notify(signalValue);
         break;
       default:
         break;
@@ -123,8 +123,8 @@ void SignalHandler::wait() {
   GlobalSignalHandler::getInstance()->wait();
 }
 
-void SignalHandler::notify(int signal_value) {
-  _callback();
+void SignalHandler::notify(int signalValue) {
+  _callback(signalValue);
 }
 
 bool SignalHandler::interrupted() {
