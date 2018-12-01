@@ -6,6 +6,7 @@
 #define ML_GRIDENGINE_EXECUTOR_GENERATEDFILESWATCHER_H
 
 #include <string>
+#include <map>
 #include <functional>
 #include <Poco/Path.h>
 #include <Poco/JSON/Object.h>
@@ -19,12 +20,13 @@ private:
   std::string _workDir;
   FileWatcherHandler _handler;
   Poco::DirectoryWatcher *_watcher;
+  std::map<std::string, std::string> _fileNamesToTags;
 
   Poco::JSON::Object::Ptr _loadJsonFile(Poco::Path const& jsonFilePath);
 
   void _onFileUpdated(Poco::DirectoryWatcher::DirectoryEvent const &e);
 
-  void _processFile(Poco::Path const& filePath);
+  void _processFile(Poco::Path const& filePath, std::string const& fileTag);
 
 public:
   explicit GeneratedFilesWatcher(std::string const& workDir, FileWatcherHandler const& handler);
