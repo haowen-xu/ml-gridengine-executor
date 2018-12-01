@@ -95,8 +95,9 @@ public:
    * Save the final status of the executor.
    *
    * @param executor The program executor.
+   * @param workDirSize Size of the working directory.
    */
-  void programFinished(ProgramExecutor const& executor);
+  void programFinished(ProgramExecutor const& executor, ssize_t workDirSize);
 };
 
 

@@ -14,6 +14,17 @@ public:
 
   /** Make parent directories. */
   static void makeParents(std::string const& filePath);
+
+  /**
+   * Calculate the size of a directory.
+   * Symbolic links will not be followed.
+   *
+   * @param path Path of the directory.
+   * @param interrupted Flag whether the operation is interrupted?
+   * @param ignoreErrors Whether or not to ignore any errors? (default true)
+   * @return Size of the directory.
+   */
+  static size_t calculateDirSize(std::string const& path, volatile bool *interrupted, bool ignoreErrors = true);
 };
 
 
