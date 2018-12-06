@@ -227,9 +227,26 @@ protected:
       }
     }
 
+    // Compute the size of the working directory
+    volatile bool interrupted = false;
+    ssize_t workDirSize = -1;
+    {
+      SignalHandler signalHandler([&interrupted] (int signalValue) {
+        interrupted = true;
+        Logger::getLogger().info(
+            "Termination signal %d received, stop computing the size of the working directory.", signalValue);
+      });
+      size_t computedSize = Utils::calculateDirSize(_workDir, &interrupted);
+      if (!interrupted) {
+        workDirSize = computedSize;
+        Logger::getLogger().info(
+            "Size of the working directory: %?d (%s) bytes", workDirSize, Utils::formatSize(workDirSize));
+      }
+    }
+
     // notify the callback API that the program has completed
     if (persistAndCallback.enabled()) {
-      persistAndCallback.programFinished(executor);
+      persistAndCallback.programFinished(executor, workDirSize);
     }
 
     // run command after execution

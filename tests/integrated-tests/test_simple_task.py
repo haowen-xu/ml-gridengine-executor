@@ -66,6 +66,10 @@ class SimpleTaskTestCase(TestCase):
     def test_status_file(self):
         with run_executor_context(['sh', '-c', 'sleep 3']) as (proc, ctx):
             status_file = ctx['status_file']
+            work_dir = ctx['work_dir']
+            os.makedirs(os.path.join(work_dir, 'nested'))
+            with open(os.path.join(work_dir, 'nested/payload.txt'), 'wb') as f:
+                f.write(b'hello, world!')
 
             time.sleep(1.5)
             status = json.loads(file_content(status_file, binary=False))
@@ -75,6 +79,7 @@ class SimpleTaskTestCase(TestCase):
             status = json.loads(file_content(status_file, binary=False))
             self.assertEqual(status['status'], 'EXITED')
             self.assertEqual(status['exitCode'], 0)
+            self.assertEqual(status['workDirSize'], compute_fs_size(work_dir))
 
     def test_work_dir_exit_code_and_run_after_and_no_exit(self):
         with TemporaryDirectory() as tmpdir:

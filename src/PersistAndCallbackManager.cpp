@@ -165,12 +165,13 @@ void PersistAndCallbackManager::fileGenerated(std::string const& fileTag, Poco::
   }
 }
 
-void PersistAndCallbackManager::programFinished(ProgramExecutor const& executor) {
+void PersistAndCallbackManager::programFinished(ProgramExecutor const& executor, ssize_t workDirSize) {
   // assemble the document
   std::string programStatus;
   Poco::JSON::Object doc;
   doc.set("executor.hostname", _hostName);
   doc.set("executor.port", _port);
+  doc.set("workDirSize", workDirSize);
   switch (executor.status()) {
     case EXITED:
       programStatus = "EXITED";

@@ -14,7 +14,13 @@
 GeneratedFilesWatcher::GeneratedFilesWatcher(std::string const &workDir, FileWatcherHandler const &handler) :
   _workDir(workDir),
   _handler(handler),
-  _watcher(nullptr)
+  _watcher(nullptr),
+  _fileNamesToTags({
+     {"config.json", "config"},
+     {"config.defaults.json", "defConfig"},
+     {"result.json", "result"},
+     {"webui.json", "webUI"}
+  })
 {
 }
 
@@ -49,25 +55,16 @@ Poco::JSON::Object::Ptr GeneratedFilesWatcher::_loadJsonFile(const Poco::Path &j
 
 void GeneratedFilesWatcher::_onFileUpdated(Poco::DirectoryWatcher::DirectoryEvent const &e) {
   Poco::Path path(e.item.path());
-  _processFile(path);
+  const std::string &fileName = path.getFileName();
+  if (_fileNamesToTags.count(fileName) > 0) {
+    _processFile(path, _fileNamesToTags[fileName]);
+  }
 }
 
-void GeneratedFilesWatcher::_processFile(Poco::Path const &filePath) {
+void GeneratedFilesWatcher::_processFile(Poco::Path const &filePath, std::string const& fileTag) {
   try {
-    std::string fileTag;
-
-    if (filePath.getFileName() == "config.json") {
-      fileTag = "config";
-    } else if (filePath.getFileName() == "config.defaults.json") {
-      fileTag = "defConfig";
-    } else if (filePath.getFileName() == "result.json") {
-      fileTag = "result";
-    }
-
-    if (!fileTag.empty()) {
-      Poco::JSON::Object::Ptr jsonObject = _loadJsonFile(filePath);
-      _handler(fileTag, *jsonObject);
-    }
+    Poco::JSON::Object::Ptr jsonObject = _loadJsonFile(filePath);
+    _handler(fileTag, *jsonObject);
   } catch (Poco::Exception const& exc) {
     Logger::getLogger().error("Failed to process generated file %s: %s", filePath.toString(), exc.displayText());
   } catch (std::exception const& exc) {
@@ -75,22 +72,13 @@ void GeneratedFilesWatcher::_processFile(Poco::Path const &filePath) {
   }
 }
 
-namespace {
-  const char* fileNames[] = {
-      "config.json",
-      "config.defaults.json",
-      "result.json",
-      nullptr
-  };
-}
-
 void GeneratedFilesWatcher::collectAll() {
-  for (size_t i=0; fileNames[i]; ++i) {
-    const char* fileName = fileNames[i];
-    Poco::Path filePath = Poco::Path(_workDir).append(fileName);
+  for (auto const& it: _fileNamesToTags) {
+    Poco::Path filePath = Poco::Path(_workDir).append(it.first);
+    std::string fileTag = it.second;
     Poco::File file(filePath);
     if (file.exists() && file.isFile()) {
-      _processFile(filePath);
+      _processFile(filePath, fileTag);
     }
   }
 }

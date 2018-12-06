@@ -7,6 +7,7 @@
 #include <Poco/Path.h>
 #include <Poco/File.h>
 #include "Utils.h"
+#include "Logger.h"
 
 namespace {
   /** Minimum size to use "GB" as the size unit. */
@@ -64,4 +65,43 @@ void Utils::makeParents(std::string const &filePath) {
   if (!parentDir.exists()) {
     parentDir.createDirectories();
   }
+}
+
+namespace {
+  size_t getFsSizeSubProc(Poco::File const& file, volatile bool *interrupted, bool ignoreErrors);
+
+  size_t getFsSize(Poco::File const& file, volatile bool *interrupted, bool ignoreErrors) {
+    size_t ret = 0;
+    if (ignoreErrors) {
+      try {
+        ret = getFsSizeSubProc(file, interrupted, ignoreErrors);
+      } catch (Poco::Exception const &exc) {
+        Logger::getLogger().error("Error computing file size: %s: %s", file.path(), exc.displayText());
+      } catch (std::exception const &exc) {
+        Logger::getLogger().error("Error computing file size: %s: %s", file.path(), std::string(exc.what()));
+      }
+    } else {
+      ret = getFsSizeSubProc(file, interrupted, ignoreErrors);
+    }
+    return ret;
+  }
+
+  size_t getFsSizeSubProc(Poco::File const& file, volatile bool *interrupted, bool ignoreErrors) {
+    size_t ret = 0;
+    if (file.isDirectory()) {
+      std::vector<Poco::File> entries;
+      file.list(entries);
+      for (auto const& it: entries) {
+        if (*interrupted)
+          break;
+        ret += getFsSize(it, interrupted, ignoreErrors);
+      }
+    }
+    ret += file.getSize();
+    return ret;
+  }
+}
+
+size_t Utils::calculateDirSize(std::string const &path, volatile bool *interrupted, bool ignoreErrors) {
+  return getFsSize(Poco::File(path), interrupted, ignoreErrors);
 }

@@ -39,10 +39,16 @@ class CallbackTestCase(TestCase):
         with AppServer(app).run_context() as uri, \
                 run_executor_context(args, callback=uri + '/_callback', token=token,
                                      watch_generated=True) as (proc, ctx):
+            work_dir = ctx['work_dir']
+            os.makedirs(os.path.join(work_dir, 'nested'))
+            with open(os.path.join(work_dir, 'nested/payload.txt'), 'wb') as f:
+                f.write(b'hello, world!')
+
             proc.wait()
+            work_dir_size = compute_fs_size(work_dir)
 
         # check the number of callbacks
-        self.assertEqual(len(app.calls), 8)
+        self.assertEqual(len(app.calls), 10)
 
         # check the tokens
         token_str = 'TOKEN {}'.format(base64.b64encode(token.encode('utf-8')).decode('utf-8'))
@@ -57,11 +63,12 @@ class CallbackTestCase(TestCase):
         self.assertEqual(app.calls[-1]['data']['eventType'], 'statusUpdated')
         self.assertEqual(app.calls[-1]['data']['data']['status'], 'EXITED')
         self.assertEqual(app.calls[-1]['data']['data']['exitCode'], 123)
+        self.assertEqual(app.calls[-1]['data']['data']['workDirSize'], work_dir_size)
 
         # check the generated content callbacks
         met = defaultdict(lambda: 0)
-        for c in app.calls[1:4]:
-            m = re.match('^fileGenerated:(result|config|defConfig)$', c['data']['eventType'])
+        for c in app.calls[1:5]:
+            m = re.match('^fileGenerated:(result|config|defConfig|webUI)$', c['data']['eventType'])
             self.assertIsNotNone(m)
             self.assertEqual(c['data']['data']['{}Value'.format(m.group(1))],
                              '{}Value1'.format(m.group(1)))
@@ -70,8 +77,8 @@ class CallbackTestCase(TestCase):
             self.assertEqual(v, 1)
 
         met = defaultdict(lambda: 0)
-        for c in app.calls[4:7]:
-            m = re.match('^fileGenerated:(result|config|defConfig)$', c['data']['eventType'])
+        for c in app.calls[5:9]:
+            m = re.match('^fileGenerated:(result|config|defConfig|webUI)$', c['data']['eventType'])
             self.assertIsNotNone(m)
             self.assertEqual(c['data']['data']['{}Value'.format(m.group(1))],
                              '{}Value2'.format(m.group(1)))
