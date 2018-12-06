@@ -39,7 +39,13 @@ class CallbackTestCase(TestCase):
         with AppServer(app).run_context() as uri, \
                 run_executor_context(args, callback=uri + '/_callback', token=token,
                                      watch_generated=True) as (proc, ctx):
+            work_dir = ctx['work_dir']
+            os.makedirs(os.path.join(work_dir, 'nested'))
+            with open(os.path.join(work_dir, 'nested/payload.txt'), 'wb') as f:
+                f.write(b'hello, world!')
+
             proc.wait()
+            work_dir_size = compute_fs_size(work_dir)
 
         # check the number of callbacks
         self.assertEqual(len(app.calls), 10)
@@ -57,6 +63,7 @@ class CallbackTestCase(TestCase):
         self.assertEqual(app.calls[-1]['data']['eventType'], 'statusUpdated')
         self.assertEqual(app.calls[-1]['data']['data']['status'], 'EXITED')
         self.assertEqual(app.calls[-1]['data']['data']['exitCode'], 123)
+        self.assertEqual(app.calls[-1]['data']['data']['workDirSize'], work_dir_size)
 
         # check the generated content callbacks
         met = defaultdict(lambda: 0)

@@ -2,6 +2,7 @@ import codecs
 import json
 import os
 import shutil
+import stat
 from threading import Thread
 
 import requests
@@ -84,7 +85,8 @@ def run_executor_context(args, **kwargs):
             status = json.loads(file_content(status_file, binary=False))
             yield proc, {'uri': 'http://127.0.0.1:{}'.format(status['executor.port']),
                          'status_file': status_file,
-                         'output_file': kwargs['output_file']}
+                         'output_file': kwargs['output_file'],
+                         'work_dir': kwargs['work_dir']}
         finally:
             proc.kill()
             proc.wait()
@@ -120,6 +122,16 @@ def get_count_output(N):
     return _cached_output_output[N]
 
 _cached_output_output = {}
+
+
+def compute_fs_size(path):
+    ret = 0
+    st = os.stat(path, follow_symlinks=False)
+    ret += st.st_size
+    if stat.S_ISDIR(st.st_mode):
+        for name in os.listdir(path):
+            ret += compute_fs_size(os.path.join(path, name))
+    return ret
 
 
 class TestCase(unittest.TestCase):
